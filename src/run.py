@@ -85,9 +85,9 @@ def run_sequential(args, logger):
     args.n_actions = env_info["n_actions"]
     args.state_shape = env_info["state_shape"]
     """
-    新增
+    新增 (QPLEX)
     """
-    args.obs_shape = env_info["obs_shape"]
+    args.unit_dim = env_info["unit_dim"]
 
     # 默认 / 基础的 scheme 和 groups
     scheme = {
