@@ -1,0 +1,90 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run VDN on 2s3z",
+      "type": "python",
+      "request": "launch",
+      "program": "src/main.py",
+      "args": [
+        "--config=vdn",
+        "--env-config=sc2",
+        "with",
+        "env_args.map_name=2s3z",
+        "batch_size=2",
+        "buffer_size=4",
+        "test_nepisode=1"
+      ],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Run QMIX on 2s3z",
+      "type": "python",
+      "request": "launch",
+      "program": "src/main.py",
+      "args": [
+        "--config=qmix",
+        "--env-config=sc2",
+        "with",
+        "env_args.map_name=2s3z",
+        "batch_size=2",
+        "buffer_size=4",
+        "test_nepisode=1"
+      ],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Python: PyMARL QMIX",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/main.py",
+      "console": "internalConsole",
+      "args": [
+        "--config=qmix",
+        "--env-config=sc2",
+        "with",
+        "env_args.map_name=2s3z"
+      ]
+    },
+    {
+      "name": "Python: PyMARL QMIX TEST",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/main.py",
+      "console": "internalConsole",
+      "args": [
+        "--config=qmix",
+        "--env-config=sc2",
+        "with",
+        "env_args.map_name=2s3z",
+        "batch_size=2",
+        "buffer_size=4",
+        "test_nepisode=1"
+      ]
+    },
+    {
+      "name": "Python: PyMARL QMIX_BETA TEST",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/main.py",
+      "console": "internalConsole",
+      "args": [
+        "--config=qmix_beta",
+        "--env-config=sc2",
+        "with",
+        "env_args.map_name=2s3z",
+        "batch_size=16",
+        "buffer_size=16",
+        "test_nepisode=8"
+      ]
+    },
+    {
+      "name": "Python Debugger: Python File",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}"
+    }
+  ]
+}

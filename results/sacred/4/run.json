@@ -1,0 +1,121 @@
+{
+  "artifacts": [],
+  "command": "my_main",
+  "experiment": {
+    "base_dir": "/mount/disk1/rl-hyr/pymarl/src",
+    "dependencies": [
+      "numpy==1.24.1",
+      "PyYAML==3.13",
+      "sacred==0.8.5",
+      "torch==2.0.1+cu117"
+    ],
+    "mainfile": "main.py",
+    "name": "pymarl",
+    "repositories": [],
+    "sources": [
+      [
+        "main.py",
+        "_sources/main_815618e85c434abad6a638c800952cf3.py"
+      ],
+      [
+        "run.py",
+        "_sources/run_9e8ba1c5acba4320165097301f72aced.py"
+      ],
+      [
+        "utils/logging.py",
+        "_sources/logging_a8d93079ba850de0608af41ca3fa7611.py"
+      ]
+    ]
+  },
+  "fail_trace": [
+    "Traceback (most recent call last):\n",
+    "  File \"/home/rl-hyr/.conda/envs/hyrpymarl/lib/python3.8/site-packages/sacred/config/captured_function.py\", line 42, in captured_function\n    result = wrapped(*args, **kwargs)\n",
+    "  File \"src/main.py\", line 35, in my_main\n    run(_run, config, _log)\n",
+    "  File \"/mount/disk1/rl-hyr/pymarl/src/run.py\", line 48, in run\n    run_sequential(args=args, logger=logger)\n",
+    "  File \"/mount/disk1/rl-hyr/pymarl/src/run.py\", line 172, in run_sequential\n    episode_batch = runner.run(test_mode=False)\n",
+    "  File \"/mount/disk1/rl-hyr/pymarl/src/runners/episode_runner.py\", line 50, in run\n    self.reset()\n",
+    "  File \"/mount/disk1/rl-hyr/pymarl/src/runners/episode_runner.py\", line 45, in reset\n    self.env.reset()\n",
+    "  File \"/home/rl-hyr/.conda/envs/hyrpymarl/lib/python3.8/site-packages/smac/env/starcraft2/starcraft2.py\", line 403, in reset\n    self._launch()\n",
+    "  File \"/home/rl-hyr/.conda/envs/hyrpymarl/lib/python3.8/site-packages/smac/env/starcraft2/starcraft2.py\", line 332, in _launch\n    map_data=self._run_config.map_data(_map.path),\n",
+    "  File \"/home/rl-hyr/.conda/envs/hyrpymarl/lib/python3.8/site-packages/pysc2/run_configs/lib.py\", line 142, in map_data\n    raise ValueError(f\"Map {map_name} not found in {self.data_dir}/Maps.\")\n",
+    "ValueError: Map SMAC_Maps/5m.SC2Map not found in /mount/disk1/rl-hyr/StarCraftII/Maps.\n"
+  ],
+  "heartbeat": "2025-11-13T11:43:05.212718",
+  "host": {
+    "ENV": {},
+    "cpu": "Intel(R) Xeon(R) w7-3465X",
+    "gpus": {
+      "driver_version": "535.230.02",
+      "gpus": [
+        {
+          "model": "NVIDIA GeForce RTX 4090",
+          "persistence_mode": false,
+          "total_memory": 24564
+        },
+        {
+          "model": "NVIDIA GeForce RTX 4090",
+          "persistence_mode": false,
+          "total_memory": 24564
+        },
+        {
+          "model": "NVIDIA GeForce RTX 4090",
+          "persistence_mode": false,
+          "total_memory": 24564
+        },
+        {
+          "model": "NVIDIA GeForce RTX 4090",
+          "persistence_mode": false,
+          "total_memory": 24564
+        }
+      ]
+    },
+    "hostname": "dell-Precision-7960-Tower",
+    "os": [
+      "Linux",
+      "Linux-6.8.0-59-generic-x86_64-with-glibc2.17"
+    ],
+    "python_version": "3.8.19"
+  },
+  "meta": {
+    "command": "my_main",
+    "config_updates": {
+      "env_args": {
+        "map_name": "5m"
+      }
+    },
+    "named_configs": [],
+    "options": {
+      "--beat-interval": null,
+      "--capture": null,
+      "--comment": null,
+      "--debug": false,
+      "--enforce_clean": false,
+      "--file_storage": null,
+      "--force": false,
+      "--help": false,
+      "--id": null,
+      "--loglevel": null,
+      "--mongo_db": null,
+      "--name": null,
+      "--pdb": false,
+      "--print-config": false,
+      "--priority": null,
+      "--queue": false,
+      "--s3": null,
+      "--sql": null,
+      "--tiny_db": null,
+      "--unobserved": false,
+      "COMMAND": null,
+      "UPDATE": [
+        "env_args.map_name=5m"
+      ],
+      "help": false,
+      "with": true
+    }
+  },
+  "resources": [],
+  "result": null,
+  "start_time": "2025-11-13T11:42:59.723223",
+  "status": "FAILED",
+  "stop_time": "2025-11-13T11:43:05.215380"
+}
