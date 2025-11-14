@@ -11,17 +11,18 @@ class RewardMixer(nn.Module):
         self.n_agents = args.n_agents
         self.state_dim = int(np.prod(args.state_shape))
         self.action_dim = args.n_actions
+        self.unit_dim = args.unit_dim
 
-        # 个体reward网络 - 所有智能体共享参数
+        # 个体 reward 网络 - 所有智能体共享参数
         self.individual_reward_net = nn.Sequential(
-            nn.Linear(self.state_dim + self.action_dim, 64),
+            nn.Linear(self.state_dim + self.action_dim + self.unit_dim, 64),
             nn.ReLU(),
             nn.Linear(64, 32),
             nn.ReLU(),
             nn.Linear(32, 1)
         )
 
-        # 全局reward聚合网络的超网络，基于全局state生成权重和偏置
+        # 全局 reward 聚合网络的超网络 - 基于全局 state 生成权重和偏置
         self.embed_dim = getattr(args, "mixing_embed_dim", 32)
         hypernet_layers = getattr(args, "hypernet_layers", 1)
 
@@ -56,15 +57,25 @@ class RewardMixer(nn.Module):
         batch_size, seq_len, n_agents, _ = obs.shape
 
         # 计算个体reward（共享参数的网络）
-        # 将全局state广播到每个agent
+        # QPLEX
+        state_flat = state.reshape(-1, self.state_dim)
+        unit_flat = state_flat[:, : self.unit_dim * self.n_agents]
+        unit_flat = unit_flat.reshape(-1, self.n_agents, self.unit_dim)
+        unit_flat = unit_flat.reshape(-1, self.unit_dim)
+
+        # 展平 state、action
+        # 将全局 state 广播到每个 agent
         state_expanded = state.unsqueeze(2).expand(batch_size, seq_len, n_agents, self.state_dim)
         state_flat = state_expanded.reshape(-1, self.state_dim)
         actions_flat = actions_onehot.reshape(-1, self.action_dim)
-        agent_inputs = torch.cat([state_flat, actions_flat], dim=-1)
+
+        # 拼接 state、action、unit_state
+        agent_inputs = torch.cat([state_flat, actions_flat, unit_flat], dim=-1)
+
         individual_rewards_flat = self.individual_reward_net(agent_inputs)
         individual_rewards = individual_rewards_flat.view(batch_size, seq_len, n_agents, 1)
 
-        # 使用超网络聚合全局reward
+        # 使用超网络聚合全局 reward
         global_reward_pred = self._aggregate_global_reward(individual_rewards, state)
 
         return individual_rewards, global_reward_pred
