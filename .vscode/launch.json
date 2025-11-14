@@ -57,6 +57,7 @@
       "args": [
         "--config=qmix",
         "--env-config=sc2",
+        "--tag=hyr",
         "with",
         "env_args.map_name=2s3z",
         "batch_size=2",

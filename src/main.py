@@ -53,6 +53,17 @@ def _get_config(params, arg_name, subfolder):
         return config_dict
 
 
+def _get_param_value(params, arg_name):
+    """从命令行参数中获取指定参数的值"""
+    value = None
+    for _i, _v in enumerate(params):
+        if _v.split("=")[0] == arg_name:
+            value = _v.split("=")[1]
+            del params[_i]
+            break
+    return value
+
+
 def recursive_dict_update(d, u):
     for k, v in u.items():
         if isinstance(v, collections.Mapping):
@@ -87,6 +98,11 @@ if __name__ == '__main__':
     # 根据 env_config 和 alg_config 更新 config_dict 中关于环境和算法的配置
     config_dict = recursive_dict_update(config_dict, env_config)
     config_dict = recursive_dict_update(config_dict, alg_config)
+    
+    # 解析 --tag 参数并添加到 config_dict 中
+    tag_value = _get_param_value(params, "--tag")
+    if tag_value is not None:
+        config_dict["tag"] = tag_value
 
     # 将所有配置添加到 sacred 中
     ex.add_config(config_dict)
