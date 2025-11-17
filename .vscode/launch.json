@@ -2,6 +2,23 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Python: PyMARL IQL TEST",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/main.py",
+      "console": "internalConsole",
+      "args": [
+        "--config=iql",
+        "--env-config=sc2",
+        "--tag=hyr",
+        "with",
+        "env_args.map_name=2s3z",
+        "batch_size=2",
+        "buffer_size=4",
+        "test_nepisode=1"
+      ]
+    },
+    {
       "name": "Run VDN on 2s3z",
       "type": "python",
       "request": "launch",

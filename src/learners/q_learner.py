@@ -41,7 +41,6 @@ class QLearner:
         """
         self.reward_mixer = RewardMixer(args)
         self.reward_optimizer = Adam(self.reward_mixer.parameters(), lr=args.lr)
-        self.reward_loss = nn.MSELoss()
         """
         新增 target_reward_mixer
         """
@@ -51,6 +50,14 @@ class QLearner:
     新增
     """
     def train(self, batch: EpisodeBatch, t_env: int, episode_num: int):
+        # 从 batch 中取出相关数据
+        # rewards = batch["reward"][:, :-1]
+        actions = batch["actions"][:, :-1]
+        terminated = batch["terminated"][:, :-1].float()
+        mask = batch["filled"][:, :-1].float()
+        mask[:, 1:] = mask[:, 1:] * (1 - terminated[:, :-1])
+        avail_actions = batch["avail_actions"]
+
         """
         更新 RewardMixer
         """
@@ -63,7 +70,10 @@ class QLearner:
         _, global_reward_pred = self.reward_mixer(obs, actions_onehot, state)
         
         # 计算损失
-        reward_loss = self.reward_loss(global_reward_pred, true_global_rewards)
+        reward_error = (global_reward_pred - true_global_rewards)
+        mask = mask.expand_as(reward_error)
+        masked_reward_error = reward_error * mask
+        reward_loss = (masked_reward_error ** 2).sum() / mask.sum()
         
         # 反向传播
         self.reward_optimizer.zero_grad()
@@ -71,8 +81,8 @@ class QLearner:
         self.reward_optimizer.step()
 
         with th.no_grad():
-            _, target_global_reward_pred = self.target_reward_mixer(obs, actions_onehot, state)
-        rewards = target_global_reward_pred.detach()
+            target_individual_rewards, _ = self.target_reward_mixer(obs, actions_onehot, state)
+        rewards = target_individual_rewards.detach()
 
         """
         ---------------------------------------------------------------------------------------
@@ -81,13 +91,6 @@ class QLearner:
         """
         更新个体 Q 网络
         """
-        # 从 batch 中取出相关数据
-        # rewards = batch["reward"][:, :-1]
-        actions = batch["actions"][:, :-1]
-        terminated = batch["terminated"][:, :-1].float()
-        mask = batch["filled"][:, :-1].float()
-        mask[:, 1:] = mask[:, 1:] * (1 - terminated[:, :-1])
-        avail_actions = batch["avail_actions"]
 
         # 遍历所有时间步以计算每个动作的 Q 值并放入 mac_out
         mac_out = []
@@ -127,7 +130,7 @@ class QLearner:
             target_max_qvals = self.target_mixer(target_max_qvals, batch["state"][:, 1:])
 
         # 计算 TD-target
-        targets = rewards + self.args.gamma * (1 - terminated) * target_max_qvals
+        targets = rewards.squeeze(-1) + self.args.gamma * (1 - terminated) * target_max_qvals
 
         # 计算 TD-error
         td_error = (chosen_action_qvals - targets.detach())
