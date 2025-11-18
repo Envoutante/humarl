@@ -53,8 +53,11 @@ class RewardMixer(nn.Module):
             nn.Linear(self.embed_dim, 1),
         )
 
-    def forward(self, obs, actions_onehot, state):
-        batch_size, seq_len, n_agents, _ = obs.shape  # obs: [batch_size, seq_len, n_agents, obs_dim]
+    def forward(self, ep_batch):
+        actions_onehot = ep_batch["actions_onehot"][:, :-1]
+        state = ep_batch["state"][:, :-1]
+
+        batch_size, seq_len, n_agents, _ = actions_onehot.shape  # actions_onehot: [batch_size, seq_len, n_agents, action_dim]
 
         # 计算个体reward（共享参数的网络）
         # QPLEX
