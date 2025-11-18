@@ -1,6 +1,7 @@
 from envs import REGISTRY as env_REGISTRY
 from functools import partial
 from components.episode_buffer import EpisodeBatch
+import os
 import numpy as np
 
 
@@ -25,6 +26,18 @@ class EpisodeRunner:
 
         # Log the first run
         self.log_train_stats_t = -1000000
+
+        """
+        新增
+        测试阶段 reward 结构化日志文件（按实验 token 区分）
+        """
+        rewards_log_dir = os.path.join(os.path.abspath(self.args.local_results_path), "reward_logs")
+        os.makedirs(rewards_log_dir, exist_ok=True)
+        unique_token = getattr(self.args, "unique_token", "default")
+        self.rewards_log_path = os.path.join(rewards_log_dir, f"rewards_{unique_token}.csv")
+        if not os.path.exists(self.rewards_log_path):
+            with open(self.rewards_log_path, "w", encoding="utf-8") as f:
+                f.write("episode_idx, step, reward\n")
 
     def setup(self, scheme, groups, preprocess, mac):
         self.new_batch = partial(EpisodeBatch, scheme, groups, self.batch_size, self.episode_limit + 1,
@@ -70,6 +83,15 @@ class EpisodeRunner:
             # 在环境中执行动作
             reward, terminated, env_info = self.env.step(actions[0])
             episode_return += reward  # 更新当前回合的总奖励 episode_return
+
+            """
+            新增
+            测试阶段记录每个时间步的 reward
+            """
+            if test_mode:
+                episode_idx = len(self.test_returns) + 1
+                with open(self.rewards_log_path, "a", encoding="utf-8") as rewards_file:
+                    rewards_file.write(f"{episode_idx}, {self.t}, {reward}\n")
 
             # 收集状态转移后的数据并存入 self.batch
             post_transition_data = {
