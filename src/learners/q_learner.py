@@ -80,9 +80,13 @@ class QLearner:
         reward_loss.backward()
         self.reward_optimizer.step()
 
+        # 计算个体 reward
         with th.no_grad():
             target_individual_rewards, _ = self.target_reward_mixer(obs, actions_onehot, state)
-        rewards = target_individual_rewards.detach()
+        # 对个体 reward 进行掩码
+        mask = mask.expand_as(target_individual_rewards.squeeze(3))
+        masked_target_individual_rewards = target_individual_rewards.squeeze(3) * mask
+        rewards = masked_target_individual_rewards.detach()  # [batch_size, seq_len-1, n_agents, 1]
 
         """
         ---------------------------------------------------------------------------------------
@@ -100,8 +104,8 @@ class QLearner:
             mac_out.append(agent_outs)
         mac_out = th.stack(mac_out, dim=1)  # 在时间步维度上拼接
 
-        # 以 actions 为索引保留对应的 Q 值
-        chosen_action_qvals = th.gather(mac_out[:, :-1], dim=3, index=actions).squeeze(3)  # Remove the last dim
+        # 以 actions 为索引保留对应的 Q 值，并移除最后一个维度
+        chosen_action_qvals = th.gather(mac_out[:, :-1], dim=3, index=actions).squeeze(3)
 
         # 计算目标 Q 值
         target_mac_out = []
@@ -110,7 +114,7 @@ class QLearner:
             target_agent_outs = self.target_mac.forward(batch, t=t)
             target_mac_out.append(target_agent_outs)
         # 由于目标 Q 值是 Q_{t+1} 因此不需要第一个 Q 值
-        target_mac_out = th.stack(target_mac_out[1:], dim=1)  # 在时间步维度上拼接
+        target_mac_out = th.stack(target_mac_out[1:], dim=1)  # [batch_size, seq_len-1, n_agents, n_actions]
 
         # 去除掉不可用的动作
         target_mac_out[avail_actions[:, 1:] == 0] = -9999999
@@ -120,9 +124,9 @@ class QLearner:
             mac_out_detach = mac_out.clone().detach()
             mac_out_detach[avail_actions == 0] = -9999999
             cur_max_actions = mac_out_detach[:, 1:].max(dim=3, keepdim=True)[1]
-            target_max_qvals = th.gather(target_mac_out, 3, cur_max_actions).squeeze(3)
+            target_max_qvals = th.gather(target_mac_out, 3, cur_max_actions).squeeze(3)  # [batch_size, seq_len-1, n_agents]
         else:  # 不使用 Double DQN
-            target_max_qvals = target_mac_out.max(dim=3)[0]
+            target_max_qvals = target_mac_out.max(dim=3)[0]  # [batch_size, seq_len-1, n_agents]
 
         # 值混合 (mix)
         if self.mixer is not None:
@@ -148,6 +152,10 @@ class QLearner:
         q_loss.backward()
         grad_norm = th.nn.utils.clip_grad_norm_(self.params, self.args.grad_norm_clip)
         self.optimiser.step()
+
+        """
+        ---------------------------------------------------------------------------------------
+        """
 
         if (episode_num - self.last_target_update_episode) / self.args.target_update_interval >= 1.0:
             self._update_targets()
