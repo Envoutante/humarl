@@ -37,7 +37,7 @@ class EpisodeRunner:
         self.rewards_log_path = os.path.join(rewards_log_dir, f"rewards_{unique_token}.csv")
         if not os.path.exists(self.rewards_log_path):
             with open(self.rewards_log_path, "w", encoding="utf-8") as f:
-                f.write("episode_idx, step, reward\n")
+                f.write("episode_idx, reward_0, reward_1, ...\n")
 
     def setup(self, scheme, groups, preprocess, mac):
         self.new_batch = partial(EpisodeBatch, scheme, groups, self.batch_size, self.episode_limit + 1,
@@ -66,7 +66,12 @@ class EpisodeRunner:
         episode_return = 0
         self.mac.init_hidden(batch_size=self.batch_size)
 
-        # 交互一个 episode
+        """
+        新增
+        记录每个 episode 的所有 reward
+        """
+        episode_rewards = [] if test_mode else None
+
         while not terminated:
 
             # 收集状态转移前的数据并存入 self.batch
@@ -86,12 +91,10 @@ class EpisodeRunner:
 
             """
             新增
-            测试阶段记录每个时间步的 reward
+            记录每个时间步的 reward
             """
             if test_mode:
-                episode_idx = len(self.test_returns) + 1
-                with open(self.rewards_log_path, "a", encoding="utf-8") as rewards_file:
-                    rewards_file.write(f"{episode_idx}, {self.t}, {reward}\n")
+                episode_rewards.append(reward)
 
             # 收集状态转移后的数据并存入 self.batch
             post_transition_data = {
@@ -128,6 +131,16 @@ class EpisodeRunner:
         cur_stats["n_episodes"] = 1 + cur_stats.get("n_episodes", 0)
         cur_stats["ep_length"] = self.t + cur_stats.get("ep_length", 0)
         cur_returns.append(episode_return)
+
+        """
+        新增
+        把记录的 reward 写入 csv 文件
+        """
+        if test_mode and episode_rewards:
+            episode_idx = len(self.test_returns)
+            row = ", ".join([str(episode_idx)] + [str(reward) for reward in episode_rewards])
+            with open(self.rewards_log_path, "a", encoding="utf-8") as rewards_file:
+                rewards_file.write(f"{row}\n")
 
         if test_mode and (len(self.test_returns) == self.args.test_nepisode):
             self._log(cur_returns, cur_stats, log_prefix)
