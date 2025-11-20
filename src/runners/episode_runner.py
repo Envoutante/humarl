@@ -31,13 +31,14 @@ class EpisodeRunner:
         新增
         测试阶段 reward 结构化日志文件（按实验 token 区分）
         """
-        rewards_log_dir = os.path.join(os.path.abspath(self.args.local_results_path), "reward_logs")
-        os.makedirs(rewards_log_dir, exist_ok=True)
-        unique_token = getattr(self.args, "unique_token", "default")
-        self.rewards_log_path = os.path.join(rewards_log_dir, f"rewards_{unique_token}.csv")
-        if not os.path.exists(self.rewards_log_path):
-            with open(self.rewards_log_path, "w", encoding="utf-8") as f:
-                f.write("episode_idx, reward_0, reward_1, ...\n")
+        if self.args.save_reward:
+            rewards_log_dir = os.path.join(os.path.abspath(self.args.local_results_path), "reward_logs")
+            os.makedirs(rewards_log_dir, exist_ok=True)
+            unique_token = getattr(self.args, "unique_token", "default")
+            self.rewards_log_path = os.path.join(rewards_log_dir, f"rewards_{unique_token}.csv")
+            if not os.path.exists(self.rewards_log_path):
+                with open(self.rewards_log_path, "w", encoding="utf-8") as f:
+                    f.write("episode_idx, reward_0, reward_1, ...\n")
 
     def setup(self, scheme, groups, preprocess, mac):
         self.new_batch = partial(EpisodeBatch, scheme, groups, self.batch_size, self.episode_limit + 1,
