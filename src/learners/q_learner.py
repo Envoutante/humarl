@@ -136,7 +136,8 @@ class QLearner:
         """
         if self.args.reward_mixer:
             rewards_expanded = rewards.expand(-1, -1, self.args.n_agents)
-            targets = (0.5 * rewards_expanded + 0.5 * individual_rewards) + self.args.gamma * (1 - terminated) * target_max_qvals
+            targets = (self.args.reward_weight * rewards_expanded + (1 - self.args.reward_weight) * individual_rewards)
+            + self.args.gamma * (1 - terminated) * target_max_qvals
         else:
             targets = rewards + self.args.gamma * (1 - terminated) * target_max_qvals
 
