@@ -70,7 +70,7 @@ class EpisodeRunner:
         新增
         记录每个 episode 的所有 reward
         """
-        episode_rewards = [] if test_mode else None
+        episode_rewards = [] if test_mode and self.args.save_reward else None
 
         while not terminated:
 
@@ -93,7 +93,7 @@ class EpisodeRunner:
             新增
             记录每个时间步的 reward
             """
-            if test_mode:
+            if test_mode and self.args.save_reward:
                 episode_rewards.append(reward)
 
             # 收集状态转移后的数据并存入 self.batch
@@ -136,7 +136,7 @@ class EpisodeRunner:
         新增
         把记录的 reward 写入 csv 文件
         """
-        if test_mode and episode_rewards:
+        if test_mode and self.args.save_reward and episode_rewards:
             episode_idx = len(self.test_returns)
             row = ", ".join([str(episode_idx)] + [str(reward) for reward in episode_rewards])
             with open(self.rewards_log_path, "a", encoding="utf-8") as rewards_file:
