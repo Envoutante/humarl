@@ -83,7 +83,7 @@ class QLearner:
             # 对个体 reward 进行掩码
             mask = mask.expand_as(target_individual_rewards.squeeze(3))
             masked_target_individual_rewards = target_individual_rewards.squeeze(3) * mask
-            rewards = masked_target_individual_rewards.squeeze(-1).detach()  # [batch_size, seq_len-1, n_agents, 1]
+            individual_rewards = masked_target_individual_rewards.squeeze(-1).detach()  # [batch_size, seq_len-1, n_agents, 1]
 
         """
         ---------------------------------------------------------------------------------------
@@ -130,8 +130,15 @@ class QLearner:
             chosen_action_qvals = self.mixer(chosen_action_qvals, batch["state"][:, :-1])
             target_max_qvals = self.target_mixer(target_max_qvals, batch["state"][:, 1:])
 
-        # 计算 TD-target
-        targets = rewards + self.args.gamma * (1 - terminated) * target_max_qvals
+        """
+        修改：计算 TD-target
+        采用混合的 reward
+        """
+        if self.args.reward_mixer:
+            rewards_expanded = rewards.expand(-1, -1, self.args.n_agents)
+            targets = (0.5 * rewards_expanded + 0.5 * individual_rewards) + self.args.gamma * (1 - terminated) * target_max_qvals
+        else:
+            targets = rewards + self.args.gamma * (1 - terminated) * target_max_qvals
 
         # 计算 TD-error
         td_error = (chosen_action_qvals - targets.detach())
