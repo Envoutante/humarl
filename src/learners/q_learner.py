@@ -92,7 +92,7 @@ class QLearner:
     """
     训练 Q 网络
     """
-    def train_q_network(self, batch: EpisodeBatch, individual_rewards):
+    def train_q_network(self, batch: EpisodeBatch, individual_rewards:None):
         # 从 batch 中取出相关数据
         rewards = batch["reward"][:, :-1]
         actions = batch["actions"][:, :-1]
@@ -177,14 +177,17 @@ class QLearner:
     """
     def train(self, batch: EpisodeBatch, t_env: int, episode_num: int):
 
-        if t_env < self.args.t_max / 2:
-            # 训练 reward 网络
-            reward_loss = self.train_reward_network(batch)
+        if self.args.reward_mixer:
+            if t_env < self.args.t_max / 2:
+                # 训练 reward 网络
+                reward_loss = self.train_reward_network(batch)
+            else:
+                # 训练 Q 网络
+                with th.no_grad():
+                    individual_rewards, _ = self.reward_mixer(batch)
+                q_loss, grad_norm, chosen_action_qvals, targets, masked_td_error, q_mask = self.train_q_network(batch, individual_rewards)
         else:
-            # 训练 Q 网络
-            with th.no_grad():
-                individual_rewards, _ = self.reward_mixer(batch)
-            q_loss, grad_norm, chosen_action_qvals, targets, masked_td_error, q_mask = self.train_q_network(batch, individual_rewards)
+            q_loss, grad_norm, chosen_action_qvals, targets, masked_td_error, q_mask = self.train_q_network(batch, None)
 
         # 更新目标网络
         if (episode_num - self.last_target_update_episode) / self.args.target_update_interval >= 1.0:
