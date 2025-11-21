@@ -8,7 +8,7 @@ from sacred.observers import FileStorageObserver
 from sacred.utils import apply_backspaces_and_linefeeds
 import sys
 import torch as th
-from utils.logging import get_logger
+from utils.rl_logging import get_logger
 import yaml
 
 from run import run
