@@ -51,7 +51,7 @@ class QLearner:
     """
     训练 reward 网络
     """
-    def train_reward_network(self, batch: EpisodeBatch):
+    def train_reward_network(self, batch: EpisodeBatch, t_env: int):
         if not self.args.reward_mixer:
             return None, None
 
@@ -59,13 +59,13 @@ class QLearner:
         新增
         从 transition_storage 中获取一个 batch
         """
-        if self.args.collect_transitions:
+        if self.args.use_transitions:
             storage_dir = os.path.join(os.path.abspath(self.args.local_results_path), "collected_transitions")
-            unique_token = self.args.unique_token
-            file_path = os.path.join(storage_dir, f"transitions_{unique_token}.h5")
+            # unique_token = self.args.unique_token
+            file_path = os.path.join(storage_dir, f"transitions_hyr__3s5z__qmix__2025-11-21_19-05-35.h5")
             transition_storage = TransitionStorage(self.args, file_path)
             batch = transition_storage.load_transition_batch()
-            batch = {key: th.from_numpy(value) for key, value in batch.items()}
+            batch = {key: th.from_numpy(value).to(self.args.device) for key, value in batch.items()}
 
         # 从 batch 中取出相关数据
         terminated = batch["terminated"][:, :-1].float()
@@ -87,12 +87,15 @@ class QLearner:
         reward_loss.backward()
         self.reward_optimizer.step()
         
-        return reward_loss
+        # 记录日志
+        if t_env - self.log_stats_t >= self.args.learner_log_interval:
+            self.logger.log_stat("reward_loss", reward_loss.item(), t_env)
+            self.log_stats_t = t_env
 
     """
     训练 Q 网络
     """
-    def train_q_network(self, batch: EpisodeBatch, individual_rewards:None):
+    def train_q_network(self, batch: EpisodeBatch, t_env: int, episode_num: int):
         # 从 batch 中取出相关数据
         rewards = batch["reward"][:, :-1]
         actions = batch["actions"][:, :-1]
@@ -143,6 +146,8 @@ class QLearner:
         采用混合的 reward
         """
         if self.args.reward_mixer:
+            with th.no_grad():
+                individual_rewards, _ = self.reward_mixer(batch)
             # 对个体 reward 进行掩码
             reward_mask = mask.expand_as(individual_rewards.squeeze(3))
             masked_individual_rewards = individual_rewards.squeeze(3) * reward_mask
@@ -169,35 +174,14 @@ class QLearner:
         q_loss.backward()
         grad_norm = th.nn.utils.clip_grad_norm_(self.params, self.args.grad_norm_clip)
         self.optimiser.step()
-        
-        return q_loss, grad_norm, chosen_action_qvals, targets, masked_td_error, q_mask
-
-    """
-    总控训练函数
-    """
-    def train(self, batch: EpisodeBatch, t_env: int, episode_num: int):
-
-        if self.args.reward_mixer:
-            if t_env < self.args.t_max / 2:
-                # 训练 reward 网络
-                reward_loss = self.train_reward_network(batch)
-            else:
-                # 训练 Q 网络
-                with th.no_grad():
-                    individual_rewards, _ = self.reward_mixer(batch)
-                q_loss, grad_norm, chosen_action_qvals, targets, masked_td_error, q_mask = self.train_q_network(batch, individual_rewards)
-        else:
-            q_loss, grad_norm, chosen_action_qvals, targets, masked_td_error, q_mask = self.train_q_network(batch, None)
 
         # 更新目标网络
         if (episode_num - self.last_target_update_episode) / self.args.target_update_interval >= 1.0:
             self._update_targets()
             self.last_target_update_episode = episode_num
-
+        
         # 记录日志
         if t_env - self.log_stats_t >= self.args.learner_log_interval:
-            if self.args.reward_mixer and reward_loss is not None:
-                self.logger.log_stat("reward_loss", reward_loss.item(), t_env)
             self.logger.log_stat("q_loss", q_loss.item(), t_env)
             self.logger.log_stat("grad_norm", grad_norm, t_env)
             mask_elems = q_mask.sum().item()
@@ -205,8 +189,6 @@ class QLearner:
             self.logger.log_stat("q_taken_mean", (chosen_action_qvals * q_mask).sum().item()/(mask_elems * self.args.n_agents), t_env)
             self.logger.log_stat("target_mean", (targets * q_mask).sum().item()/(mask_elems * self.args.n_agents), t_env)
             self.log_stats_t = t_env
-
-        return q_loss
 
     def _update_targets(self):
         self.target_mac.load_state(self.mac)
