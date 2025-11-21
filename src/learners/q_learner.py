@@ -1,8 +1,10 @@
 import copy
+import os
 from components.episode_buffer import EpisodeBatch
 from modules.mixers.vdn import VDNMixer
 from modules.mixers.qmix import QMixer
 from modules.reward_mixer import RewardMixer
+from utils.transition_storage import TransitionStorage
 import torch as th
 import torch.nn as nn
 from torch.optim import RMSprop, Adam
@@ -40,16 +42,57 @@ class QLearner:
         新增 reward_mixer
         """
         self.reward_mixer = RewardMixer(args)
-        self.reward_optimizer = Adam(self.reward_mixer.parameters(), lr=args.lr)
+        self.reward_optimizer = RMSprop(params=self.reward_mixer.parameters(), lr=args.lr, alpha=args.optim_alpha, eps=args.optim_eps)
         """
         新增 target_reward_mixer
         """
         self.target_reward_mixer = copy.deepcopy(self.reward_mixer)
 
     """
-    新增
+    训练 reward 网络
     """
-    def train(self, batch: EpisodeBatch, t_env: int, episode_num: int):
+    def train_reward_network(self, batch: EpisodeBatch):
+        if not self.args.reward_mixer:
+            return None, None
+
+        """
+        新增
+        从 transition_storage 中获取一个 batch
+        """
+        if self.args.collect_transitions:
+            storage_dir = os.path.join(os.path.abspath(self.args.local_results_path), "collected_transitions")
+            unique_token = self.args.unique_token
+            file_path = os.path.join(storage_dir, f"transitions_{unique_token}.h5")
+            transition_storage = TransitionStorage(self.args, file_path)
+            batch = transition_storage.load_transition_batch()
+            batch = {key: th.from_numpy(value) for key, value in batch.items()}
+
+        # 从 batch 中取出相关数据
+        terminated = batch["terminated"][:, :-1].float()
+        mask = batch["filled"][:, :-1].float()
+        mask[:, 1:] = mask[:, 1:] * (1 - terminated[:, :-1])
+        
+        # 前向传播
+        _, global_reward_pred = self.reward_mixer(batch)
+        
+        # 计算损失
+        true_global_rewards = batch["reward"][:, :-1]
+        reward_error = (global_reward_pred - true_global_rewards)
+        reward_mask = mask.expand_as(reward_error)
+        masked_reward_error = reward_error * reward_mask
+        reward_loss = (masked_reward_error ** 2).sum() / reward_mask.sum()
+        
+        # 反向传播
+        self.reward_optimizer.zero_grad()
+        reward_loss.backward()
+        self.reward_optimizer.step()
+        
+        return reward_loss
+
+    """
+    训练 Q 网络
+    """
+    def train_q_network(self, batch: EpisodeBatch, individual_rewards):
         # 从 batch 中取出相关数据
         rewards = batch["reward"][:, :-1]
         actions = batch["actions"][:, :-1]
@@ -57,41 +100,6 @@ class QLearner:
         mask = batch["filled"][:, :-1].float()
         mask[:, 1:] = mask[:, 1:] * (1 - terminated[:, :-1])
         avail_actions = batch["avail_actions"]
-
-        """
-        更新 RewardMixer
-        """
-        if self.args.reward_mixer:           
-            # 前向传播
-            _, global_reward_pred = self.reward_mixer(batch)
-            
-            # 计算损失
-            true_global_rewards = batch["reward"][:, :-1]
-            reward_error = (global_reward_pred - true_global_rewards)
-            mask = mask.expand_as(reward_error)
-            masked_reward_error = reward_error * mask
-            reward_loss = (masked_reward_error ** 2).sum() / mask.sum()
-            
-            # 反向传播
-            self.reward_optimizer.zero_grad()
-            reward_loss.backward()
-            self.reward_optimizer.step()
-
-            # 计算个体 reward
-            with th.no_grad():
-                target_individual_rewards, _ = self.target_reward_mixer(batch)
-            # 对个体 reward 进行掩码
-            mask = mask.expand_as(target_individual_rewards.squeeze(3))
-            masked_target_individual_rewards = target_individual_rewards.squeeze(3) * mask
-            individual_rewards = masked_target_individual_rewards.squeeze(-1).detach()  # [batch_size, seq_len-1, n_agents, 1]
-
-        """
-        ---------------------------------------------------------------------------------------
-        """
-
-        """
-        更新个体 Q 网络
-        """
 
         # 遍历所有时间步以计算每个动作的 Q 值并放入 mac_out
         mac_out = []
@@ -135,6 +143,11 @@ class QLearner:
         采用混合的 reward
         """
         if self.args.reward_mixer:
+            # 对个体 reward 进行掩码
+            reward_mask = mask.expand_as(individual_rewards.squeeze(3))
+            masked_individual_rewards = individual_rewards.squeeze(3) * reward_mask
+            individual_rewards = masked_individual_rewards.squeeze(-1).detach()  # [batch_size, seq_len-1, n_agents, 1]
+
             mixd_reward = self.args.reward_weight * rewards + (1 - self.args.reward_weight) * individual_rewards
             targets = mixd_reward + self.args.gamma * (1 - terminated) * target_max_qvals
         else:
@@ -143,37 +156,51 @@ class QLearner:
         # 计算 TD-error
         td_error = (chosen_action_qvals - targets.detach())
 
-        mask = mask.expand_as(td_error)
+        q_mask = mask.expand_as(td_error)
 
         # mask 掉无效的 TD-error
-        masked_td_error = td_error * mask
+        masked_td_error = td_error * q_mask
 
         # 计算 L2 损失 (仅对实际数据取平均)
-        q_loss = (masked_td_error ** 2).sum() / mask.sum()
+        q_loss = (masked_td_error ** 2).sum() / q_mask.sum()
 
         # 更新参数
         self.optimiser.zero_grad()
         q_loss.backward()
         grad_norm = th.nn.utils.clip_grad_norm_(self.params, self.args.grad_norm_clip)
         self.optimiser.step()
+        
+        return q_loss, grad_norm, chosen_action_qvals, targets, masked_td_error, q_mask
 
-        """
-        ---------------------------------------------------------------------------------------
-        """
+    """
+    总控训练函数
+    """
+    def train(self, batch: EpisodeBatch, t_env: int, episode_num: int):
 
+        if t_env < self.args.t_max / 2:
+            # 训练 reward 网络
+            reward_loss = self.train_reward_network(batch)
+        else:
+            # 训练 Q 网络
+            with th.no_grad():
+                individual_rewards, _ = self.reward_mixer(batch)
+            q_loss, grad_norm, chosen_action_qvals, targets, masked_td_error, q_mask = self.train_q_network(batch, individual_rewards)
+
+        # 更新目标网络
         if (episode_num - self.last_target_update_episode) / self.args.target_update_interval >= 1.0:
             self._update_targets()
             self.last_target_update_episode = episode_num
 
+        # 记录日志
         if t_env - self.log_stats_t >= self.args.learner_log_interval:
-            if self.args.reward_mixer:
+            if self.args.reward_mixer and reward_loss is not None:
                 self.logger.log_stat("reward_loss", reward_loss.item(), t_env)
             self.logger.log_stat("q_loss", q_loss.item(), t_env)
             self.logger.log_stat("grad_norm", grad_norm, t_env)
-            mask_elems = mask.sum().item()
+            mask_elems = q_mask.sum().item()
             self.logger.log_stat("td_error_abs", (masked_td_error.abs().sum().item()/mask_elems), t_env)
-            self.logger.log_stat("q_taken_mean", (chosen_action_qvals * mask).sum().item()/(mask_elems * self.args.n_agents), t_env)
-            self.logger.log_stat("target_mean", (targets * mask).sum().item()/(mask_elems * self.args.n_agents), t_env)
+            self.logger.log_stat("q_taken_mean", (chosen_action_qvals * q_mask).sum().item()/(mask_elems * self.args.n_agents), t_env)
+            self.logger.log_stat("target_mean", (targets * q_mask).sum().item()/(mask_elems * self.args.n_agents), t_env)
             self.log_stats_t = t_env
 
         return q_loss
