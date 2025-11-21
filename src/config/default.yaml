@@ -17,6 +17,7 @@ use_cuda: True # Use gpu by default unless it isn't available
 buffer_cpu_only: True # If true we won't keep all of the replay buffer in vram
 reward_mixer: False
 reward_weight: 0.5
+reward_train: 2
 
 # --- Logging options ---
 use_tensorboard: True # Log results to tensorboard
@@ -29,6 +30,7 @@ save_replay: False # Saving the replay of the model loaded from checkpoint_path
 local_results_path: "results" # Path for local results
 save_reward: False
 collect_transitions: False
+use_transitions: False
 
 # --- RL hyperparameters ---
 gamma: 0.99
