@@ -135,9 +135,8 @@ class QLearner:
         采用混合的 reward
         """
         if self.args.reward_mixer:
-            rewards_expanded = rewards.expand(-1, -1, self.args.n_agents)
-            targets = (self.args.reward_weight * rewards_expanded + (1 - self.args.reward_weight) * individual_rewards)
-            + self.args.gamma * (1 - terminated) * target_max_qvals
+            mixd_reward = self.args.reward_weight * rewards + (1 - self.args.reward_weight) * individual_rewards
+            targets = mixd_reward + self.args.gamma * (1 - terminated) * target_max_qvals
         else:
             targets = rewards + self.args.gamma * (1 - terminated) * target_max_qvals
 
