@@ -3,6 +3,7 @@ from functools import partial
 from components.episode_buffer import EpisodeBatch
 import os
 import numpy as np
+from utils.transition_storage import TransitionStorage
 
 
 class EpisodeRunner:
@@ -39,6 +40,17 @@ class EpisodeRunner:
             if not os.path.exists(self.rewards_log_path):
                 with open(self.rewards_log_path, "w", encoding="utf-8") as f:
                     f.write("episode_idx, reward_0, reward_1, ...\n")
+
+        """
+        新增
+        离线强化学习数据收集：存储训练时的 transitions
+        """
+        if self.args.collect_transitions:
+            storage_dir = os.path.join(os.path.abspath(self.args.local_results_path), "collected_transitions")
+            os.makedirs(storage_dir, exist_ok=True)
+            unique_token = self.args.unique_token
+            file_path = os.path.join(storage_dir, f"transitions_{unique_token}.h5")
+            self.transition_storage = TransitionStorage(file_path, self.get_env_info())
 
     def setup(self, scheme, groups, preprocess, mac):
         self.new_batch = partial(EpisodeBatch, scheme, groups, self.batch_size, self.episode_limit + 1,
@@ -143,6 +155,14 @@ class EpisodeRunner:
             with open(self.rewards_log_path, "a", encoding="utf-8") as rewards_file:
                 rewards_file.write(f"{row}\n")
 
+        """
+        新增
+        保存训练时的 transitions 用于离线强化学习
+        """
+        if not test_mode and self.args.collect_transitions and self.transition_storage is not None:
+            self.transition_storage.save_transition_batch(self.batch)
+
+        # 记录日志
         if test_mode and (len(self.test_returns) == self.args.test_nepisode):
             self._log(cur_returns, cur_stats, log_prefix)
         elif self.t_env - self.log_train_stats_t >= self.args.runner_log_interval:
