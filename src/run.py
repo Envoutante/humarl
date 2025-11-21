@@ -5,7 +5,7 @@ import time
 import threading
 import torch as th
 from types import SimpleNamespace as SN
-from utils.logging import Logger
+from utils.rl_logging import Logger
 from utils.timehelper import time_left, time_str
 from os.path import dirname, abspath
 
