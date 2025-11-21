@@ -79,8 +79,13 @@ def run_sequential(args, logger):
     # 实例化 runner 以获得环境信息
     runner = r_REGISTRY[args.runner](args=args, logger=logger)
 
-    # 设置 schemes 和 groups
+    # 从 env_info 中获取维度信息
     env_info = runner.get_env_info()
+    """
+    新增
+    """
+    args.env_info = env_info
+
     args.n_agents = env_info["n_agents"]
     args.n_actions = env_info["n_actions"]
     args.state_shape = env_info["state_shape"]
@@ -89,7 +94,7 @@ def run_sequential(args, logger):
     """
     args.unit_dim = env_info["unit_dim"]
 
-    # 默认 / 基础的 scheme 和 groups
+    # 定义 scheme 和 groups
     scheme = {
         "state": {"vshape": env_info["state_shape"]},
         "obs": {"vshape": env_info["obs_shape"], "group": "agents"},
