@@ -45,12 +45,13 @@ class EpisodeRunner:
         新增
         离线强化学习数据收集：存储训练时的 transitions
         """
+        self.args.env_info = self.get_env_info()
         if self.args.collect_transitions:
             storage_dir = os.path.join(os.path.abspath(self.args.local_results_path), "collected_transitions")
             os.makedirs(storage_dir, exist_ok=True)
             unique_token = self.args.unique_token
             file_path = os.path.join(storage_dir, f"transitions_{unique_token}.h5")
-            self.transition_storage = TransitionStorage(file_path, self.get_env_info())
+            self.transition_storage = TransitionStorage(self.args, file_path)
 
     def setup(self, scheme, groups, preprocess, mac):
         self.new_batch = partial(EpisodeBatch, scheme, groups, self.batch_size, self.episode_limit + 1,
