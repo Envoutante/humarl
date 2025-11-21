@@ -4,23 +4,24 @@ import torch as th
 import json
 
 class TransitionStorage:
-    def __init__(self, filename, env_info, max_size=1000000):
+    def __init__(self, args, filename, max_size=1000000):
+        self.args = args
         self.filename = filename
-        self.env_info = env_info
         self.max_size = max_size
         self.current_index = 0
         self.is_full = False
         
         self.scheme = {
-            "state": {"vshape": (self.env_info["state_shape"],)},
-            "obs": {"vshape": (self.env_info["obs_shape"],), "group": "agents"},
+            "state": {"vshape": (self.args.env_info["state_shape"],)},
+            "obs": {"vshape": (self.args.env_info["obs_shape"],), "group": "agents"},
             "actions": {"vshape": (1,), "group": "agents", "dtype": np.int64},
-            "avail_actions": {"vshape": (self.env_info["n_actions"],), "group": "agents", "dtype": np.int32},
+            "avail_actions": {"vshape": (self.args.env_info["n_actions"],), "group": "agents", "dtype": np.int32},
             "reward": {"vshape": (1,)},
             "terminated": {"vshape": (1,), "dtype": np.uint8},
+            "filled": {"vshape": (1,), "dtype": np.int64},
         }
         self.groups = {
-            "agents": self.env_info["n_agents"]
+            "agents": self.args.env_info["n_agents"]
         }
         
         self._init_storage()
@@ -51,10 +52,10 @@ class TransitionStorage:
                 # 设置分组数据的维度
                 if "group" in info:
                     group_size = self.groups[info["group"]]
-                    actual_shape = (self.max_size, self.env_info["episode_limit"] + 1, group_size, *vshape)
+                    actual_shape = (self.max_size, self.args.env_info["episode_limit"] + 1, group_size, *vshape)
                 # 设置非分组数据的维度
                 else:
-                    actual_shape = (self.max_size, self.env_info["episode_limit"] + 1, *vshape)
+                    actual_shape = (self.max_size, self.args.env_info["episode_limit"] + 1, *vshape)
                 
                 if key not in f:
                     f.create_dataset(key, actual_shape, dtype=dtype)
@@ -95,11 +96,11 @@ class TransitionStorage:
                 batch_size = self.max_size - self.current_index
             
             # 保存每个字段的数据
-            for key, _ in self.scheme.items():
+            for key in self.scheme.keys():
                 if key in batch_data.data.transition_data:
                     data = batch_data[key]
                     
-                    # 确保数据在CPU上并且是numpy数组
+                    # 确保数据在 CPU 上并且是 numpy 数组
                     if th.is_tensor(data):
                         data = data.cpu().numpy()
                     
@@ -120,36 +121,27 @@ class TransitionStorage:
             f.attrs['metadata'] = json.dumps(metadata)
 
 
-    def load_transition_batch(self, batch_size=32, indices=None):
+    def load_transition_batch(self, batch_size=32):
         """
         加载一个 batch 的 transition
         """
-        with h5py.File(self.filename, 'r') as f:
-            metadata = json.loads(f.attrs['metadata'])
-            total_stored = metadata.get('total_stored', metadata['current_index'])
-            
-            if indices is None:
-                # 随机采样
-                indices = np.random.randint(0, total_stored, batch_size)
-            
+        with h5py.File(self.filename, 'r') as f: 
             batch_data = {}
             for key in self.scheme.keys():
                 if key in f:
-                    batch_data[key] = f[key][indices]
+                    batch_data[key] = f[key][:batch_size]
             
             return batch_data
 
 
 if __name__ == "__main__":
-    file_path = "results/collected_transitions/transitions_hyr__3s5z__qmix__2025-11-21_13-39-24.h5"
+    file_path = "results/collected_transitions/transitions_hyr__3s5z__qmix__2025-11-21_15-14-10.h5"
     
     with h5py.File(file_path, 'r') as f:
         for attr_name, attr_value in f.attrs.items():
             print(f"{attr_name}: {attr_value}")
 
-        for key in list(f.keys())[:5]:
+        for key in list(f.keys())[:]:
             data = f[key]
             print(f"{key}: {data.shape}")
 
-        # for key in list(f.keys())[:5]:
-        #     print(f"{key}: {f[key][:]}")
