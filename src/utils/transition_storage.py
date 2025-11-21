@@ -4,7 +4,7 @@ import torch as th
 import json
 
 class TransitionStorage:
-    def __init__(self, args, filename, max_size=1000000):
+    def __init__(self, args, filename, max_size=50000):
         self.args = args
         self.filename = filename
         self.max_size = max_size
@@ -16,6 +16,7 @@ class TransitionStorage:
             "obs": {"vshape": (self.args.env_info["obs_shape"],), "group": "agents"},
             "actions": {"vshape": (1,), "group": "agents", "dtype": np.int64},
             "avail_actions": {"vshape": (self.args.env_info["n_actions"],), "group": "agents", "dtype": np.int32},
+            "actions_onehot": {"vshape": (self.args.env_info["n_actions"],), "group": "agents", "dtype": np.int32},
             "reward": {"vshape": (1,)},
             "terminated": {"vshape": (1,), "dtype": np.uint8},
             "filled": {"vshape": (1,), "dtype": np.int64},
@@ -135,7 +136,7 @@ class TransitionStorage:
 
 
 if __name__ == "__main__":
-    file_path = "results/collected_transitions/transitions_hyr__3s5z__qmix__2025-11-21_15-14-10.h5"
+    file_path = "results/collected_transitions/transitions_hyr__3s5z__qmix__2025-11-21_19-05-35.h5"
     
     with h5py.File(file_path, 'r') as f:
         for attr_name, attr_value in f.attrs.items():
