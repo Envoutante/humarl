@@ -51,7 +51,7 @@ class QLearner:
     """
     训练 reward 网络
     """
-    def train_reward_network(self, batch: EpisodeBatch, t_env: int):
+    def train_reward_network(self, batch: EpisodeBatch, t_env: int, episode_num: int):
         if not self.args.reward_mixer:
             return None, None
 
@@ -60,12 +60,20 @@ class QLearner:
         从 transition_storage 中获取一个 batch
         """
         if self.args.use_transitions:
+            # 根据 file_path 实例化 transition_storage
             storage_dir = os.path.join(os.path.abspath(self.args.local_results_path), "collected_transitions")
-            # unique_token = self.args.unique_token
-            file_path = os.path.join(storage_dir, f"transitions_hyr__3s5z__qmix__2025-11-21_19-05-35.h5")
+            file_path = os.path.join(storage_dir, self.args.transitions_filename + '.h5')
             transition_storage = TransitionStorage(self.args, file_path)
-            batch = transition_storage.load_transition_batch()
+            # 从 H5 文件中加载 transition
+            batch = transition_storage.load_transition_batch(start_index=episode_num)
+            # 移动数据到指定的 device
             batch = {key: th.from_numpy(value).to(self.args.device) for key, value in batch.items()}
+            # 截断数据为当前 batch 中最长 episode 的长度
+            max_ep_t = th.sum(batch["filled"], 1).max(0)[0]
+            batch = {key: tensor[:, :max_ep_t] for key, tensor in batch.items()}
+            # 更新 t_env
+            total_steps = batch["filled"].sum().item()
+            t_env += total_steps
 
         # 从 batch 中取出相关数据
         terminated = batch["terminated"][:, :-1].float()
@@ -91,6 +99,8 @@ class QLearner:
         if t_env - self.log_stats_t >= self.args.learner_log_interval:
             self.logger.log_stat("reward_loss", reward_loss.item(), t_env)
             self.log_stats_t = t_env
+        
+        return t_env
 
     """
     训练 Q 网络
