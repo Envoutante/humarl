@@ -122,21 +122,28 @@ class TransitionStorage:
             f.attrs['metadata'] = json.dumps(metadata)
 
 
-    def load_transition_batch(self, batch_size=32):
+    def load_transition_batch(self, batch_size=32, start_index=0):
         """
         加载一个 batch 的 transition
         """
         with h5py.File(self.filename, 'r') as f: 
+            # 获取 total_stored
+            metadata = json.loads(f.attrs['metadata'])
+            total_stored = metadata.get('total_stored', 0)
+
+            # 计算实际结束索引
+            end_index = min(start_index + batch_size, total_stored)
+
             batch_data = {}
             for key in self.scheme.keys():
                 if key in f:
-                    batch_data[key] = f[key][:batch_size]
+                    batch_data[key] = f[key][start_index:end_index]
             
             return batch_data
 
 
 if __name__ == "__main__":
-    file_path = "results/collected_transitions/transitions_hyr__3s5z__qmix__2025-11-21_19-05-35.h5"
+    file_path = "results/collected_transitions/transitions_999__3s5z__qmix__2025-11-21_19-41-18.h5"
     
     with h5py.File(file_path, 'r') as f:
         for attr_name, attr_value in f.attrs.items():
