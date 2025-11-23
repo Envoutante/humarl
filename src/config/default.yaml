@@ -17,7 +17,8 @@ use_cuda: True # Use gpu by default unless it isn't available
 buffer_cpu_only: True # If true we won't keep all of the replay buffer in vram
 reward_mixer: False
 reward_weight: 0.5
-reward_train: 2
+reward_train: 1000000
+transitions_filename:
 
 # --- Logging options ---
 use_tensorboard: True # Log results to tensorboard

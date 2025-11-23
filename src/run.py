@@ -177,8 +177,16 @@ def run_sequential(args, logger):
         修改：改为两阶段训练
         """
         if args.reward_mixer and runner.t_env <= args.reward_train:
-            runner.t_env += 1
-            learner.train_reward_network(None, runner.t_env)
+            t_env = learner.train_reward_network(None, runner.t_env, episode)
+            runner.t_env = t_env
+
+            episode += 32
+
+            # 记录日志
+            if (runner.t_env - last_log_T) >= args.log_interval:
+                logger.log_stat("episode", episode, runner.t_env)
+                logger.print_recent_stats()
+                last_log_T = runner.t_env
         else:
             # 交互一个回合并把数据存入 buffer 中
             episode_batch = runner.run(test_mode=False)
@@ -223,13 +231,13 @@ def run_sequential(args, logger):
                 # learner 负责模型的保存/加载 —— 将 actor 的保存/加载委托给 mac
                 learner.save_models(save_path)
 
-        episode += args.batch_size_run
+            episode += args.batch_size_run
 
-        # 记录日志
-        if (runner.t_env - last_log_T) >= args.log_interval:
-            logger.log_stat("episode", episode, runner.t_env)
-            logger.print_recent_stats()
-            last_log_T = runner.t_env
+            # 记录日志
+            if (runner.t_env - last_log_T) >= args.log_interval:
+                logger.log_stat("episode", episode, runner.t_env)
+                logger.print_recent_stats()
+                last_log_T = runner.t_env
 
     runner.close_env()
     logger.console_logger.info("Finished Training")
