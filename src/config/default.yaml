@@ -18,6 +18,7 @@ buffer_cpu_only: True # If true we won't keep all of the replay buffer in vram
 reward_mixer: False
 reward_weight: 0.5
 reward_train: 1000000
+reward_batch_size: 32
 transitions_filename:
 
 # --- Logging options ---

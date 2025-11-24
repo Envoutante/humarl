@@ -47,6 +47,10 @@ class QLearner:
         新增 target_reward_mixer
         """
         self.target_reward_mixer = copy.deepcopy(self.reward_mixer)
+        """
+        新增
+        """
+        self.reward_log_stats_t = -self.args.learner_log_interval - 1
 
     """
     训练 reward 网络
@@ -65,7 +69,7 @@ class QLearner:
             file_path = os.path.join(storage_dir, self.args.transitions_filename + '.h5')
             transition_storage = TransitionStorage(self.args, file_path)
             # 从 H5 文件中加载 transition
-            batch = transition_storage.load_transition_batch(start_index=episode_num)
+            batch = transition_storage.load_transition_batch(batch_size=self.args.reward_batch_size)
             # 移动数据到指定的 device
             batch = {key: th.from_numpy(value).to(self.args.device) for key, value in batch.items()}
             # 截断数据为当前 batch 中最长 episode 的长度
@@ -96,9 +100,9 @@ class QLearner:
         self.reward_optimizer.step()
         
         # 记录日志
-        if t_env - self.log_stats_t >= self.args.learner_log_interval:
+        if t_env - self.reward_log_stats_t >= self.args.learner_log_interval:
             self.logger.log_stat("reward_loss", reward_loss.item(), t_env)
-            self.log_stats_t = t_env
+            self.reward_log_stats_t = t_env
         
         return t_env
 
