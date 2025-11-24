@@ -171,73 +171,80 @@ def run_sequential(args, logger):
 
     logger.console_logger.info("Beginning training for {} timesteps".format(args.t_max))
 
+    """
+    新增
+    训练 reward 网络
+    """
+    if args.reward_mixer:
+        reward_t_env = 0
+        reward_episode = 0
+        while reward_t_env <= args.reward_train:
+            reward_t_env = learner.train_reward_network(None, reward_t_env, reward_episode)
+            reward_episode += args.reward_batch_size
+
+            # 记录日志
+            if (reward_t_env - last_log_T) >= args.log_interval:
+                logger.log_stat("episode", reward_episode, reward_t_env)
+                logger.print_recent_stats()
+                last_log_T = reward_t_env
+
+    """
+    新增
+    重置计数器
+    """
+    last_log_T = 0
+
     while runner.t_env <= args.t_max:
+        # 交互一个回合并把数据存入 buffer 中
+        episode_batch = runner.run(test_mode=False)
+        buffer.insert_episode_batch(episode_batch)
 
-        """
-        修改：改为两阶段训练
-        """
-        if args.reward_mixer and runner.t_env <= args.reward_train:
-            t_env = learner.train_reward_network(None, runner.t_env, episode)
-            runner.t_env = t_env
+        # 训练模型
+        if buffer.can_sample(args.batch_size):
+            episode_sample = buffer.sample(args.batch_size)
 
-            episode += 32
+            # 截断数据为当前 batch 中最长 episode 的长度
+            max_ep_t = episode_sample.max_t_filled()
+            episode_sample = episode_sample[:, :max_ep_t]
 
-            # 记录日志
-            if (runner.t_env - last_log_T) >= args.log_interval:
-                logger.log_stat("episode", episode, runner.t_env)
-                logger.print_recent_stats()
-                last_log_T = runner.t_env
-        else:
-            # 交互一个回合并把数据存入 buffer 中
-            episode_batch = runner.run(test_mode=False)
-            buffer.insert_episode_batch(episode_batch)
+            if episode_sample.device != args.device:
+                episode_sample.to(args.device)
 
-            # 训练模型
-            if buffer.can_sample(args.batch_size):
-                episode_sample = buffer.sample(args.batch_size)
+            # learner 基于算法设计更新模型参数
+            learner.train_q_network(episode_sample, runner.t_env, episode)
 
-                # 截断数据为当前 batch 中最长 episode 的长度
-                max_ep_t = episode_sample.max_t_filled()
-                episode_sample = episode_sample[:, :max_ep_t]
+        # 测试模型
+        n_test_runs = max(1, args.test_nepisode // runner.batch_size)
+        if (runner.t_env - last_test_T) / args.test_interval >= 1.0:
 
-                if episode_sample.device != args.device:
-                    episode_sample.to(args.device)
+            logger.console_logger.info("t_env: {} / {}".format(runner.t_env, args.t_max))
+            logger.console_logger.info("Estimated time left: {}. Time passed: {}".format(
+                time_left(last_time, last_test_T, runner.t_env, args.t_max), time_str(time.time() - start_time)))
+            
+            last_time = time.time()
+            last_test_T = runner.t_env
 
-                # learner 基于算法设计更新模型参数
-                learner.train_q_network(episode_sample, runner.t_env, episode)
+            for _ in range(n_test_runs):
+                runner.run(test_mode=True)
 
-            # 测试模型
-            n_test_runs = max(1, args.test_nepisode // runner.batch_size)
-            if (runner.t_env - last_test_T) / args.test_interval >= 1.0:
+        # 保存模型
+        if args.save_model and (runner.t_env - model_save_time >= args.save_model_interval or model_save_time == 0):
+            model_save_time = runner.t_env
+            save_path = os.path.join(args.local_results_path, "models", args.unique_token, str(runner.t_env))
+            # "results/models/{}".format(unique_token)
+            os.makedirs(save_path, exist_ok=True)
+            logger.console_logger.info("Saving models to {}".format(save_path))
 
-                logger.console_logger.info("t_env: {} / {}".format(runner.t_env, args.t_max))
-                logger.console_logger.info("Estimated time left: {}. Time passed: {}".format(
-                    time_left(last_time, last_test_T, runner.t_env, args.t_max), time_str(time.time() - start_time)))
-                
-                last_time = time.time()
-                last_test_T = runner.t_env
+            # learner 负责模型的保存/加载 —— 将 actor 的保存/加载委托给 mac
+            learner.save_models(save_path)
 
-                for _ in range(n_test_runs):
-                    runner.run(test_mode=True)
+        episode += args.batch_size_run
 
-            # 保存模型
-            if args.save_model and (runner.t_env - model_save_time >= args.save_model_interval or model_save_time == 0):
-                model_save_time = runner.t_env
-                save_path = os.path.join(args.local_results_path, "models", args.unique_token, str(runner.t_env))
-                # "results/models/{}".format(unique_token)
-                os.makedirs(save_path, exist_ok=True)
-                logger.console_logger.info("Saving models to {}".format(save_path))
-
-                # learner 负责模型的保存/加载 —— 将 actor 的保存/加载委托给 mac
-                learner.save_models(save_path)
-
-            episode += args.batch_size_run
-
-            # 记录日志
-            if (runner.t_env - last_log_T) >= args.log_interval:
-                logger.log_stat("episode", episode, runner.t_env)
-                logger.print_recent_stats()
-                last_log_T = runner.t_env
+        # 记录日志
+        if (runner.t_env - last_log_T) >= args.log_interval:
+            logger.log_stat("episode", episode, runner.t_env)
+            logger.print_recent_stats()
+            last_log_T = runner.t_env
 
     runner.close_env()
     logger.console_logger.info("Finished Training")
