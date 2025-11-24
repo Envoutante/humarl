@@ -122,7 +122,7 @@ class TransitionStorage:
             f.attrs['metadata'] = json.dumps(metadata)
 
 
-    def load_transition_batch(self, batch_size=32, start_index=0):
+    def load_transition_batch(self, batch_size=32):
         """
         加载一个 batch 的 transition
         """
@@ -131,25 +131,43 @@ class TransitionStorage:
             metadata = json.loads(f.attrs['metadata'])
             total_stored = metadata.get('total_stored', 0)
 
-            # 计算实际结束索引
-            end_index = min(start_index + batch_size, total_stored)
+            # 生成随机索引
+            random_indices = np.random.choice(total_stored, size=batch_size, replace=False)
 
             batch_data = {}
             for key in self.scheme.keys():
                 if key in f:
-                    batch_data[key] = f[key][start_index:end_index]
+                    batch_data[key] = np.array(f[key])[random_indices]
             
             return batch_data
 
 
 if __name__ == "__main__":
     file_path = "results/collected_transitions/transitions_999__3s5z__qmix__2025-11-21_19-41-18.h5"
+    batch_size = 32
     
     with h5py.File(file_path, 'r') as f:
+        """
+        查看文件元数据
+        """
         for attr_name, attr_value in f.attrs.items():
             print(f"{attr_name}: {attr_value}")
 
+        """
+        查看各数据集的形状
+        """
         for key in list(f.keys())[:]:
             data = f[key]
             print(f"{key}: {data.shape}")
 
+        """
+        查看任意 batch_size 大小的数据
+        """
+        # 获取 total_stored
+        metadata = json.loads(f.attrs['metadata'])
+        total_stored = metadata.get('total_stored', 0)
+        # 生成随机索引
+        random_indices = np.random.choice(total_stored, size=batch_size, replace=False)
+        for key in list(f.keys())[:]:
+            data = np.array(f[key])
+            batch_data = data[random_indices]
