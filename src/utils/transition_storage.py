@@ -131,8 +131,8 @@ class TransitionStorage:
             metadata = json.loads(f.attrs['metadata'])
             total_stored = metadata.get('total_stored', 0)
 
-            # 生成随机索引
-            random_indices = np.random.choice(total_stored, size=batch_size, replace=False)
+            # 生成随机索引 (放回采样)
+            random_indices = np.random.choice(total_stored, size=batch_size, replace=True)
 
             batch_data = {}
             for key in self.scheme.keys():
