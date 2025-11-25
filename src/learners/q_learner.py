@@ -160,13 +160,13 @@ class QLearner:
         采用混合的 reward
         """
         if self.args.reward_mixer:
+            # 计算个体 reward
             with th.no_grad():
                 individual_rewards, _ = self.reward_mixer(batch)
             # 对个体 reward 进行掩码
-            reward_mask = mask.expand_as(individual_rewards.squeeze(3))
-            masked_individual_rewards = individual_rewards.squeeze(3) * reward_mask
-            individual_rewards = masked_individual_rewards.squeeze(-1).detach()  # [batch_size, seq_len-1, n_agents, 1]
-
+            masked_individual_rewards = individual_rewards.squeeze(-1) * mask
+            individual_rewards = masked_individual_rewards.detach()  # [batch_size, seq_len-1, n_agents, 1]
+            # 混合 reward
             mixd_reward = self.args.reward_weight * rewards + (1 - self.args.reward_weight) * individual_rewards
             targets = mixd_reward + self.args.gamma * (1 - terminated) * target_max_qvals
         else:
