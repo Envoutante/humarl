@@ -127,38 +127,16 @@ def run_sequential(args, logger):
     if args.use_cuda:
         learner.cuda()
 
+    """
+     * @author hyr
+     * @modified 2025-11-25-20:48
+     * @description 统一 Q 网络和 reward 网络加载模型的代码
+    """
     if args.checkpoint_path != "":
+        load_model(learner, args, logger, runner, args.checkpoint_path)
 
-        timesteps = []
-        timestep_to_load = 0
-
-        if not os.path.isdir(args.checkpoint_path):
-            logger.console_logger.info("Checkpoint directiory {} doesn't exist".format(args.checkpoint_path))
-            return
-
-        # Go through all files in args.checkpoint_path
-        for name in os.listdir(args.checkpoint_path):
-            full_name = os.path.join(args.checkpoint_path, name)
-            # Check if they are dirs the names of which are numbers
-            if os.path.isdir(full_name) and name.isdigit():
-                timesteps.append(int(name))
-
-        if args.load_step == 0:
-            # choose the max timestep
-            timestep_to_load = max(timesteps)
-        else:
-            # choose the timestep closest to load_step
-            timestep_to_load = min(timesteps, key=lambda x: abs(x - args.load_step))
-
-        model_path = os.path.join(args.checkpoint_path, str(timestep_to_load))
-
-        logger.console_logger.info("Loading model from {}".format(model_path))
-        learner.load_models(model_path)
-        runner.t_env = timestep_to_load
-
-        if args.evaluate or args.save_replay:
-            evaluate_sequential(args, runner)
-            return
+    if args.reward_checkpoint_path != "":
+        load_model(learner, args, logger, runner, args.reward_checkpoint_path, is_reward_model=True)
 
     # 开始训练
     episode = 0
@@ -175,24 +153,35 @@ def run_sequential(args, logger):
     新增
     训练 reward 网络
     """
-    if args.two_stage_train:
+    if args.two_stage_train and args.reward_checkpoint_path == "":
         reward_t_env = 0
         reward_episode = 0
-        while reward_t_env <= args.reward_train:
+        reward_last_log_T = 0
+        reward_model_save_time = 0
+
+        while reward_t_env <= 5 * args.reward_train:
             reward_t_env = learner.train_reward_network(None, reward_t_env, reward_episode)
             reward_episode += args.reward_batch_size
 
             # 打印日志
-            if (reward_t_env - last_log_T) >= args.log_interval:
+            if (reward_t_env - reward_last_log_T) >= args.log_interval:
                 logger.log_stat("episode", reward_episode, reward_t_env)
                 logger.print_recent_stats()
                 last_log_T = reward_t_env
 
-    """
-    新增
-    重置计数器
-    """
-    last_log_T = 0
+            """
+             * @author hyr
+             * @modified 2025-11-25-17:17
+             * @description 保存 reward 模型
+            """
+            if args.save_reward_model and (reward_t_env - reward_model_save_time >= args.save_model_interval or reward_model_save_time == 0):
+                reward_model_save_time = reward_t_env
+                reward_model_save_path = os.path.join(
+                    args.local_results_path, "reward_models", args.unique_token, str(reward_t_env)
+                )
+                os.makedirs(reward_model_save_path, exist_ok=True)
+                logger.console_logger.info("Saving reward models to {}".format(reward_model_save_path))
+                learner.save_reward_models(reward_model_save_path)
 
     """
     训练 q 网络
@@ -274,3 +263,39 @@ def args_sanity_check(config, _log):
         config["test_nepisode"] = (config["test_nepisode"]//config["batch_size_run"]) * config["batch_size_run"]
 
     return config
+
+
+def load_model(learner, args, logger, runner, checkpoint_path, is_reward_model=False):
+        timesteps = []
+        timestep_to_load = 0
+
+        if not os.path.isdir(checkpoint_path):
+            logger.console_logger.info("Checkpoint directiory {} doesn't exist".format(checkpoint_path))
+            return
+
+        # Go through all files in checkpoint_path
+        for name in os.listdir(checkpoint_path):
+            full_name = os.path.join(checkpoint_path, name)
+            # Check if they are dirs the names of which are numbers
+            if os.path.isdir(full_name) and name.isdigit():
+                timesteps.append(int(name))
+
+        if args.load_step == 0:
+            # choose the max timestep
+            timestep_to_load = max(timesteps)
+        else:
+            # choose the timestep closest to load_step
+            timestep_to_load = min(timesteps, key=lambda x: abs(x - args.load_step))
+
+        model_path = os.path.join(checkpoint_path, str(timestep_to_load))
+
+        logger.console_logger.info("Loading model from {}".format(model_path))
+        if not is_reward_model:
+            learner.load_models(model_path)
+        else:
+            learner.load_reward_models(model_path)
+        runner.t_env = timestep_to_load
+
+        if args.evaluate or args.save_replay:
+            evaluate_sequential(args, runner)
+            return
