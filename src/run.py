@@ -175,14 +175,14 @@ def run_sequential(args, logger):
     新增
     训练 reward 网络
     """
-    if args.reward_mixer:
+    if args.two_stage_train:
         reward_t_env = 0
         reward_episode = 0
         while reward_t_env <= args.reward_train:
             reward_t_env = learner.train_reward_network(None, reward_t_env, reward_episode)
             reward_episode += args.reward_batch_size
 
-            # 记录日志
+            # 打印日志
             if (reward_t_env - last_log_T) >= args.log_interval:
                 logger.log_stat("episode", reward_episode, reward_t_env)
                 logger.print_recent_stats()
@@ -194,6 +194,9 @@ def run_sequential(args, logger):
     """
     last_log_T = 0
 
+    """
+    训练 q 网络
+    """
     while runner.t_env <= args.t_max:
         # 交互一个回合并把数据存入 buffer 中
         episode_batch = runner.run(test_mode=False)
@@ -210,8 +213,15 @@ def run_sequential(args, logger):
             if episode_sample.device != args.device:
                 episode_sample.to(args.device)
 
-            # learner 基于算法设计更新模型参数
-            learner.train_q_network(episode_sample, runner.t_env, episode)
+            """
+            修改
+            learner 基于算法设计更新模型参数
+            """
+            if not args.two_stage_train and args.reward_mixer:
+                learner.train_reward_network(episode_sample, runner.t_env, episode)
+                learner.train_q_network(episode_sample, runner.t_env, episode)
+            else:
+                learner.train_q_network(episode_sample, runner.t_env, episode)
 
         # 测试模型
         n_test_runs = max(1, args.test_nepisode // runner.batch_size)
@@ -240,7 +250,7 @@ def run_sequential(args, logger):
 
         episode += args.batch_size_run
 
-        # 记录日志
+        # 打印日志
         if (runner.t_env - last_log_T) >= args.log_interval:
             logger.log_stat("episode", episode, runner.t_env)
             logger.print_recent_stats()

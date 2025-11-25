@@ -15,10 +15,18 @@ learner_log_interval: 2000 # Log training stats every {} timesteps
 t_max: 10000 # Stop running after this many timesteps
 use_cuda: True # Use gpu by default unless it isn't available
 buffer_cpu_only: True # If true we won't keep all of the replay buffer in vram
-reward_mixer: False
-reward_weight: 0.5
-reward_train: 1000000
-reward_batch_size: 32
+
+# --- Reward options ---
+save_reward: False # 是否记录 reward
+reward_mixer: False # 是否使用个体 reward
+reward_weight: 0.5 # 个体 reward 权重
+reward_train: 1000000 # 训练 reward 网络多少步
+reward_batch_size: 32 # reward 网络训练的 batch size
+
+# --- Transition options ---
+two_stage_train: False
+collect_transitions: False
+use_transitions: False
 transitions_filename:
 
 # --- Logging options ---
@@ -30,9 +38,6 @@ evaluate: False # Evaluate model for test_nepisode episodes and quit (no trainin
 load_step: 0 # Load model trained on this many timesteps (0 if choose max possible)
 save_replay: False # Saving the replay of the model loaded from checkpoint_path
 local_results_path: "results" # Path for local results
-save_reward: False
-collect_transitions: False
-use_transitions: False
 
 # --- RL hyperparameters ---
 gamma: 0.99
