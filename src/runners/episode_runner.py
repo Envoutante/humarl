@@ -32,14 +32,14 @@ class EpisodeRunner:
         新增
         测试阶段 reward 结构化日志文件（按实验 token 区分）
         """
-        if self.args.save_reward:
+        if self.args.save_test_reward:
             rewards_log_dir = os.path.join(os.path.abspath(self.args.local_results_path), "reward_logs")
             os.makedirs(rewards_log_dir, exist_ok=True)
             unique_token = getattr(self.args, "unique_token", "default")
             self.rewards_log_path = os.path.join(rewards_log_dir, f"rewards_{unique_token}.csv")
             if not os.path.exists(self.rewards_log_path):
                 with open(self.rewards_log_path, "w", encoding="utf-8") as f:
-                    f.write("episode_idx, reward_0, reward_1, ...\n")
+                    f.write("episode_idx, step_0, step_1, ...\n")
 
         """
         新增
@@ -84,7 +84,7 @@ class EpisodeRunner:
         新增
         记录每个 episode 的所有 reward
         """
-        episode_rewards = [] if test_mode and self.args.save_reward else None
+        episode_rewards = [] if test_mode and self.args.save_test_reward else None
 
         while not terminated:
 
@@ -107,7 +107,7 @@ class EpisodeRunner:
             新增
             记录每个时间步的 reward
             """
-            if test_mode and self.args.save_reward:
+            if test_mode and self.args.save_test_reward:
                 episode_rewards.append(reward)
 
             # 收集状态转移后的数据并存入 self.batch
@@ -150,7 +150,7 @@ class EpisodeRunner:
         新增
         把记录的 reward 写入 csv 文件
         """
-        if test_mode and self.args.save_reward and episode_rewards:
+        if test_mode and self.args.save_test_reward and episode_rewards:
             episode_idx = len(self.test_returns)
             row = ", ".join([str(episode_idx)] + [str(reward) for reward in episode_rewards])
             with open(self.rewards_log_path, "a", encoding="utf-8") as rewards_file:

@@ -50,7 +50,34 @@ class QLearner:
         """
         新增
         """
-        self.reward_log_stats_t = -self.args.learner_log_interval - 1
+        self.reward_log_t = -self.args.learner_log_interval - 1
+        self.reward_save_t = 0
+
+        """
+         * @author hyr
+         * @modified 2025-11-25-17:30
+         * @description 记录 individual_rewards
+        """
+        self.individual_rewards_log_path = None
+        if self.args.save_train_reward and self.args.reward_mixer:
+            logs_dir = os.path.join(os.path.abspath(self.args.local_results_path), "individual_reward_logs")
+            os.makedirs(logs_dir, exist_ok=True)
+            unique_token = getattr(self.args, "unique_token", "default")
+            self.individual_rewards_log_path = os.path.join(logs_dir, f"individual_rewards_{unique_token}.csv")
+            if not os.path.exists(self.individual_rewards_log_path):
+                with open(self.individual_rewards_log_path, "w", encoding="utf-8") as f:
+                    f.write("episode_idx, step_0, step_1, ...\n")
+
+        """
+         * @author hyr
+         * @modified 2025-11-25-17:00
+         * @description 避免反复实例化 TransitionStorage
+        """
+        if self.args.use_transitions:
+            # 根据 file_path 实例化 transition_storage
+            storage_dir = os.path.join(os.path.abspath(self.args.local_results_path), "collected_transitions")
+            file_path = os.path.join(storage_dir, self.args.transitions_filename + '.h5')
+            self.transition_storage = TransitionStorage(self.args, file_path)
 
     """
     训练 reward 网络
@@ -64,12 +91,8 @@ class QLearner:
         从 transition_storage 中获取一个 batch
         """
         if self.args.use_transitions:
-            # 根据 file_path 实例化 transition_storage
-            storage_dir = os.path.join(os.path.abspath(self.args.local_results_path), "collected_transitions")
-            file_path = os.path.join(storage_dir, self.args.transitions_filename + '.h5')
-            transition_storage = TransitionStorage(self.args, file_path)
             # 从 H5 文件中加载 transition
-            batch = transition_storage.load_transition_batch(batch_size=self.args.reward_batch_size)
+            batch = self.transition_storage.load_transition_batch(batch_size=self.args.reward_batch_size)
             # 移动数据到指定的 device
             batch = {key: th.from_numpy(value).to(self.args.device) for key, value in batch.items()}
             # 截断数据为当前 batch 中最长 episode 的长度
@@ -100,9 +123,9 @@ class QLearner:
         self.reward_optimizer.step()
         
         # 记录日志
-        if t_env - self.reward_log_stats_t >= self.args.learner_log_interval:
+        if t_env - self.reward_log_t >= self.args.learner_log_interval:
             self.logger.log_stat("reward_loss", reward_loss.item(), t_env)
-            self.reward_log_stats_t = t_env
+            self.reward_log_t = t_env
         
         return t_env
 
@@ -165,10 +188,32 @@ class QLearner:
                 individual_rewards, _ = self.reward_mixer(batch)
             # 对个体 reward 进行掩码
             masked_individual_rewards = individual_rewards.squeeze(-1) * mask
-            individual_rewards = masked_individual_rewards.detach()  # [batch_size, seq_len-1, n_agents, 1]
+            individual_rewards = masked_individual_rewards.detach()  # [batch_size, seq_len-1, n_agents]
             # 混合 reward
             mixd_reward = self.args.reward_weight * rewards + (1 - self.args.reward_weight) * individual_rewards
             targets = mixd_reward + self.args.gamma * (1 - terminated) * target_max_qvals
+
+            """
+             * @author hyr
+             * @modified 2025-11-25-17:40
+             * @description 记录 rewards 和 individual_rewards
+            """
+            if self.individual_rewards_log_path is not None and (t_env - self.reward_save_t >= self.args.reward_save_interval or self.reward_save_t == 0):
+                batch_size, seq_len, _ = individual_rewards.shape
+                for episode in range(batch_size):
+                    step_cells = []
+                    for t_idx in range(seq_len):
+                        total_reward = rewards[episode, t_idx].item()  # 当前时间步的全局 reward (标量)
+                        step_rewards = individual_rewards[episode, t_idx].tolist()  # 当前时间步每个 agent 的 individual reward
+                        cell = f"{total_reward}={step_rewards}"
+                        step_cells.append(cell)
+
+                    episode_idx = episode_num + episode
+                    row = ", ".join([str(episode_idx)] + step_cells)
+                    with open(self.individual_rewards_log_path, "a", encoding="utf-8") as f:
+                        f.write(row + "\n")
+
+                self.rewards_log_stats_t = t_env
         else:
             targets = rewards + self.args.gamma * (1 - terminated) * target_max_qvals
 
@@ -228,6 +273,14 @@ class QLearner:
         if self.mixer is not None:
             th.save(self.mixer.state_dict(), "{}/mixer.th".format(path))
         th.save(self.optimiser.state_dict(), "{}/opt.th".format(path))
+        """
+         * @author hyr
+         * @modified 2025-11-25-17:17
+         * @description 保存 Q 网络的同时保存 reward 网络
+        """
+        if self.args.reward_mixer:
+            th.save(self.reward_mixer.state_dict(), "{}/reward_mixer.th".format(path))
+            th.save(self.reward_optimizer.state_dict(), "{}/reward_opt.th".format(path))
 
     def load_models(self, path):
         self.mac.load_models(path)
@@ -236,3 +289,29 @@ class QLearner:
         if self.mixer is not None:
             self.mixer.load_state_dict(th.load("{}/mixer.th".format(path), map_location=lambda storage, loc: storage))
         self.optimiser.load_state_dict(th.load("{}/opt.th".format(path), map_location=lambda storage, loc: storage))
+        """
+         * @author hyr
+         * @modified 2025-11-25-17:16
+         * @description 加载 reward 网络
+        """
+        if self.args.reward_mixer:
+            self.reward_mixer.load_state_dict(th.load("{}/reward_mixer.th".format(path), map_location=lambda storage, loc: storage))
+            self.reward_optimizer.load_state_dict(th.load("{}/reward_opt.th".format(path), map_location=lambda storage, loc: storage))
+
+    """
+     * @author hyr
+     * @modified 2025-11-25-17:15
+     * @description 单独保存 reward 网络
+    """
+    def save_reward_models(self, path):
+        th.save(self.reward_mixer.state_dict(), "{}/reward_mixer.th".format(path))
+        th.save(self.reward_optimizer.state_dict(), "{}/reward_opt.th".format(path))
+
+    """
+     * @author hyr
+     * @modified 2025-11-25-19:16
+     * @description 单独加载 reward 网络
+    """
+    def load_reward_models(self, path):
+        self.reward_mixer.load_state_dict(th.load("{}/reward_mixer.th".format(path), map_location=lambda storage, loc: storage))
+        self.reward_optimizer.load_state_dict(th.load("{}/reward_opt.th".format(path), map_location=lambda storage, loc: storage))
