@@ -24,7 +24,7 @@ reward_mixer: False # 是否使用个体 reward
 reward_weight: 0.5 # 个体 reward 权重
 reward_train: 1000000 # 训练 reward 网络多少步
 reward_batch_size: 32 # reward 网络训练的 batch size
-reward_save_interval: 500000
+reward_save_interval: 100000
 reward_checkpoint_path: "" # 预训练 reward 网络路径
 
 # --- Transition options ---
@@ -36,7 +36,7 @@ transitions_filename:
 # --- Logging options ---
 use_tensorboard: True # Log results to tensorboard
 save_model: False # Save the models to disk
-save_model_interval: 2000000 # Save models after this many timesteps
+save_model_interval: 1000000 # Save models after this many timesteps
 checkpoint_path: "" # Load a checkpoint from this path
 evaluate: False # Evaluate model for test_nepisode episodes and quit (no training)
 load_step: 0 # Load model trained on this many timesteps (0 if choose max possible)

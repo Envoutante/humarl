@@ -292,9 +292,9 @@ def load_model(learner, args, logger, runner, checkpoint_path, is_reward_model=F
         logger.console_logger.info("Loading model from {}".format(model_path))
         if not is_reward_model:
             learner.load_models(model_path)
+            runner.t_env = timestep_to_load
         else:
             learner.load_reward_models(model_path)
-        runner.t_env = timestep_to_load
 
         if args.evaluate or args.save_replay:
             evaluate_sequential(args, runner)
