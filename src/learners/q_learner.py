@@ -173,14 +173,10 @@ class QLearner:
         else:  # 不使用 Double DQN
             target_max_qvals = target_mac_out.max(dim=3)[0]  # [batch_size, seq_len-1, n_agents]
 
-        # 值混合 (mix)
-        if self.mixer is not None:
-            chosen_action_qvals = self.mixer(chosen_action_qvals, batch["state"][:, :-1])
-            target_max_qvals = self.target_mixer(target_max_qvals, batch["state"][:, 1:])
-
         """
-        修改：计算 TD-target
-        采用混合的 reward
+         * @author hyr
+         * @modified 2025-11-26-15:55
+         * @description 新增的优化目标
         """
         if self.args.reward_mixer:
             # 计算个体 reward
@@ -189,16 +185,87 @@ class QLearner:
             # 对个体 reward 进行掩码
             masked_individual_rewards = individual_rewards.squeeze(-1) * mask
             individual_rewards = masked_individual_rewards.detach()  # [batch_size, seq_len-1, n_agents]
+            
             # 混合 reward
             mixd_reward = self.args.reward_weight * rewards + (1 - self.args.reward_weight) * individual_rewards
             targets = mixd_reward + self.args.gamma * (1 - terminated) * target_max_qvals
+            
+            # 记录 rewards 和 individual_rewards
+            self._log_reward(rewards, individual_rewards, t_env, episode_num)
 
+            # 计算 TD-error
+            td_error = (chosen_action_qvals - targets.detach())
+
+            q_mask = mask.expand_as(td_error)
+
+            # mask 掉无效的 TD-error
+            masked_td_error = td_error * q_mask
+
+            # 计算 L2 损失 (仅对实际数据取平均)
+            q_loss_2 = (masked_td_error ** 2).sum() / q_mask.sum()
+
+            # 更新参数
+            self.optimiser.zero_grad()
+            q_loss_2.backward(retain_graph=True)
+            grad_norm = th.nn.utils.clip_grad_norm_(self.params, self.args.grad_norm_clip)
+            self.optimiser.step()
+
+        """
+         * @author hyr
+         * @modified 2025-11-26-16:12
+         * @description 原始的优化目标
+        """
+        if self.mixer is not None:
+            chosen_action_qvals = self.mixer(chosen_action_qvals, batch["state"][:, :-1])
+            target_max_qvals = self.target_mixer(target_max_qvals, batch["state"][:, 1:])
+
+        targets = rewards + self.args.gamma * (1 - terminated) * target_max_qvals
+
+        # 计算 TD-error
+        td_error = (chosen_action_qvals - targets.detach())
+
+        q_mask = mask.expand_as(td_error)
+
+        # mask 掉无效的 TD-error
+        masked_td_error = td_error * q_mask
+
+        # 计算 L2 损失 (仅对实际数据取平均)
+        q_loss_1 = (masked_td_error ** 2).sum() / q_mask.sum()
+
+        # 更新参数
+        self.optimiser.zero_grad()
+        q_loss_1.backward()
+        grad_norm = th.nn.utils.clip_grad_norm_(self.params, self.args.grad_norm_clip)
+        self.optimiser.step()
+
+        # 更新目标网络
+        if (episode_num - self.last_target_update_episode) / self.args.target_update_interval >= 1.0:
+            self._update_targets()
+            self.last_target_update_episode = episode_num
+        
+        # 记录日志
+        if t_env - self.log_stats_t >= self.args.learner_log_interval:
+            if self.args.reward_mixer:
+                self.logger.log_stat("q_loss_2", q_loss_2.item(), t_env)
+            self.logger.log_stat("q_loss_1", q_loss_1.item(), t_env)
+            self.logger.log_stat("grad_norm", grad_norm, t_env)
+            mask_elems = q_mask.sum().item()
+            self.logger.log_stat("td_error_abs", (masked_td_error.abs().sum().item()/mask_elems), t_env)
+            self.logger.log_stat("q_taken_mean", (chosen_action_qvals * q_mask).sum().item()/(mask_elems * self.args.n_agents), t_env)
+            self.logger.log_stat("target_mean", (targets * q_mask).sum().item()/(mask_elems * self.args.n_agents), t_env)
+            self.log_stats_t = t_env
+
+
+    def _log_reward(self, rewards, individual_rewards, t_env: int, episode_num: int):
             """
              * @author hyr
              * @modified 2025-11-25-17:40
              * @description 记录 rewards 和 individual_rewards
             """
-            if self.individual_rewards_log_path is not None and (t_env - self.reward_save_t >= self.args.reward_save_interval or self.reward_save_t == 0):
+            if self.individual_rewards_log_path is None:
+                return
+            
+            if t_env - self.reward_save_t >= self.args.reward_save_interval or self.reward_save_t == 0:
                 batch_size, seq_len, _ = individual_rewards.shape
                 for episode in range(batch_size):
                     step_cells = []
@@ -214,40 +281,6 @@ class QLearner:
                         f.write(row + "\n")
 
                 self.rewards_log_stats_t = t_env
-        else:
-            targets = rewards + self.args.gamma * (1 - terminated) * target_max_qvals
-
-        # 计算 TD-error
-        td_error = (chosen_action_qvals - targets.detach())
-
-        q_mask = mask.expand_as(td_error)
-
-        # mask 掉无效的 TD-error
-        masked_td_error = td_error * q_mask
-
-        # 计算 L2 损失 (仅对实际数据取平均)
-        q_loss = (masked_td_error ** 2).sum() / q_mask.sum()
-
-        # 更新参数
-        self.optimiser.zero_grad()
-        q_loss.backward()
-        grad_norm = th.nn.utils.clip_grad_norm_(self.params, self.args.grad_norm_clip)
-        self.optimiser.step()
-
-        # 更新目标网络
-        if (episode_num - self.last_target_update_episode) / self.args.target_update_interval >= 1.0:
-            self._update_targets()
-            self.last_target_update_episode = episode_num
-        
-        # 记录日志
-        if t_env - self.log_stats_t >= self.args.learner_log_interval:
-            self.logger.log_stat("q_loss", q_loss.item(), t_env)
-            self.logger.log_stat("grad_norm", grad_norm, t_env)
-            mask_elems = q_mask.sum().item()
-            self.logger.log_stat("td_error_abs", (masked_td_error.abs().sum().item()/mask_elems), t_env)
-            self.logger.log_stat("q_taken_mean", (chosen_action_qvals * q_mask).sum().item()/(mask_elems * self.args.n_agents), t_env)
-            self.logger.log_stat("target_mean", (targets * q_mask).sum().item()/(mask_elems * self.args.n_agents), t_env)
-            self.log_stats_t = t_env
 
     def _update_targets(self):
         self.target_mac.load_state(self.mac)
