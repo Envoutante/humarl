@@ -204,12 +204,6 @@ class QLearner:
             # 计算 L2 损失 (仅对实际数据取平均)
             q_loss_2 = (masked_td_error ** 2).sum() / q_mask.sum()
 
-            # 更新参数
-            self.optimiser.zero_grad()
-            q_loss_2.backward(retain_graph=True)
-            grad_norm = th.nn.utils.clip_grad_norm_(self.params, self.args.grad_norm_clip)
-            self.optimiser.step()
-
         """
          * @author hyr
          * @modified 2025-11-26-16:12
@@ -232,9 +226,19 @@ class QLearner:
         # 计算 L2 损失 (仅对实际数据取平均)
         q_loss_1 = (masked_td_error ** 2).sum() / q_mask.sum()
 
+        """
+         * @author hyr
+         * @modified 2025-11-28-17:55
+         * @description 汇总 loss
+        """
+        if self.args.reward_mixer:
+            q_loss = self.args.loss_weight * q_loss_1 + (1 - self.args.loss_weight) * q_loss_2
+        else:
+            q_loss = q_loss_1
+
         # 更新参数
         self.optimiser.zero_grad()
-        q_loss_1.backward()
+        q_loss.backward()
         grad_norm = th.nn.utils.clip_grad_norm_(self.params, self.args.grad_norm_clip)
         self.optimiser.step()
 
@@ -245,6 +249,7 @@ class QLearner:
         
         # 记录日志
         if t_env - self.log_stats_t >= self.args.learner_log_interval:
+            self.logger.log_stat("q_loss", q_loss.item(), t_env)
             if self.args.reward_mixer:
                 self.logger.log_stat("q_loss_2", q_loss_2.item(), t_env)
             self.logger.log_stat("q_loss_1", q_loss_1.item(), t_env)
