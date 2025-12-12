@@ -1,0 +1,127 @@
+{
+  "artifacts": [],
+  "command": "my_main",
+  "experiment": {
+    "base_dir": "/mount/disk1/rl-hyr/pymarl/src",
+    "dependencies": [
+      "numpy==1.24.1",
+      "PyYAML==6.0.1",
+      "sacred==0.8.5",
+      "torch==2.0.1+cu117"
+    ],
+    "mainfile": "main.py",
+    "name": "pymarl",
+    "repositories": [
+      {
+        "commit": "2e49afdbe7a801131837f1b6854a84a04e63748e",
+        "dirty": true,
+        "url": "git@github.com:Envoutante/humarl.git"
+      },
+      {
+        "commit": "2e49afdbe7a801131837f1b6854a84a04e63748e",
+        "dirty": true,
+        "url": "git@github.com:Envoutante/humarl.git"
+      },
+      {
+        "commit": "2e49afdbe7a801131837f1b6854a84a04e63748e",
+        "dirty": true,
+        "url": "git@github.com:Envoutante/humarl.git"
+      }
+    ],
+    "sources": [
+      [
+        "main.py",
+        "_sources/main_82f7d3db1444c593ae7595b033167269.py"
+      ],
+      [
+        "run.py",
+        "_sources/run_7911ddab0b7ff30dd1480a75183ffc39.py"
+      ],
+      [
+        "utils/logging.py",
+        "_sources/logging_a8d93079ba850de0608af41ca3fa7611.py"
+      ]
+    ]
+  },
+  "heartbeat": "2025-12-09T04:33:40.530579",
+  "host": {
+    "ENV": {},
+    "cpu": "Intel(R) Xeon(R) w7-3465X",
+    "gpus": {
+      "driver_version": "535.230.02",
+      "gpus": [
+        {
+          "model": "NVIDIA GeForce RTX 4090",
+          "persistence_mode": false,
+          "total_memory": 24564
+        },
+        {
+          "model": "NVIDIA GeForce RTX 4090",
+          "persistence_mode": false,
+          "total_memory": 24564
+        },
+        {
+          "model": "NVIDIA GeForce RTX 4090",
+          "persistence_mode": false,
+          "total_memory": 24564
+        },
+        {
+          "model": "NVIDIA GeForce RTX 4090",
+          "persistence_mode": false,
+          "total_memory": 24564
+        }
+      ]
+    },
+    "hostname": "dell-Precision-7960-Tower",
+    "os": [
+      "Linux",
+      "Linux-6.8.0-59-generic-x86_64-with-glibc2.17"
+    ],
+    "python_version": "3.8.19"
+  },
+  "meta": {
+    "command": "my_main",
+    "config_updates": {
+      "env_args": {
+        "map_name": "MMM2"
+      },
+      "t_max": 1000000,
+      "use_tensorboard": true
+    },
+    "named_configs": [],
+    "options": {
+      "--beat-interval": null,
+      "--capture": null,
+      "--comment": null,
+      "--debug": false,
+      "--enforce_clean": false,
+      "--file_storage": null,
+      "--force": false,
+      "--help": false,
+      "--id": null,
+      "--loglevel": null,
+      "--mongo_db": null,
+      "--name": null,
+      "--pdb": false,
+      "--print-config": false,
+      "--priority": null,
+      "--queue": false,
+      "--s3": null,
+      "--sql": null,
+      "--tiny_db": null,
+      "--unobserved": false,
+      "COMMAND": null,
+      "UPDATE": [
+        "env_args.map_name=MMM2",
+        "t_max=1000000",
+        "use_tensorboard=True"
+      ],
+      "help": false,
+      "with": true
+    }
+  },
+  "resources": [],
+  "result": null,
+  "start_time": "2025-12-09T02:25:21.412106",
+  "status": "RUNNING"
+}
