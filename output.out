@@ -1,0 +1,199 @@
+nohup: ignoring input
+[DEBUG 16:00:23] git.cmd Popen(['git', 'version'], cwd=/mount/disk1/rl-hyr/pymarl, stdin=None, shell=False, universal_newlines=False)
+[DEBUG 16:00:23] git.cmd Popen(['git', 'version'], cwd=/mount/disk1/rl-hyr/pymarl, stdin=None, shell=False, universal_newlines=False)
+[DEBUG 16:00:23] git.cmd Popen(['git', 'diff', '--cached', '--abbrev=40', '--full-index', '--raw'], cwd=/mount/disk1/rl-hyr/pymarl, stdin=None, shell=False, universal_newlines=False)
+[DEBUG 16:00:23] git.cmd Popen(['git', 'diff', '--abbrev=40', '--full-index', '--raw'], cwd=/mount/disk1/rl-hyr/pymarl, stdin=None, shell=False, universal_newlines=False)
+[DEBUG 16:00:23] git.cmd Popen(['git', 'cat-file', '--batch-check'], cwd=/mount/disk1/rl-hyr/pymarl, stdin=<valid stream>, shell=False, universal_newlines=False)
+[DEBUG 16:00:23] git.cmd Popen(['git', 'diff', '--cached', '--abbrev=40', '--full-index', '--raw'], cwd=/mount/disk1/rl-hyr/pymarl, stdin=None, shell=False, universal_newlines=False)
+[DEBUG 16:00:23] git.cmd Popen(['git', 'diff', '--abbrev=40', '--full-index', '--raw'], cwd=/mount/disk1/rl-hyr/pymarl, stdin=None, shell=False, universal_newlines=False)
+[DEBUG 16:00:23] git.cmd Popen(['git', 'cat-file', '--batch-check'], cwd=/mount/disk1/rl-hyr/pymarl, stdin=<valid stream>, shell=False, universal_newlines=False)
+[DEBUG 16:00:23] git.cmd Popen(['git', 'diff', '--cached', '--abbrev=40', '--full-index', '--raw'], cwd=/mount/disk1/rl-hyr/pymarl, stdin=None, shell=False, universal_newlines=False)
+[DEBUG 16:00:23] git.cmd Popen(['git', 'diff', '--abbrev=40', '--full-index', '--raw'], cwd=/mount/disk1/rl-hyr/pymarl, stdin=None, shell=False, universal_newlines=False)
+[DEBUG 16:00:23] git.cmd Popen(['git', 'cat-file', '--batch-check'], cwd=/mount/disk1/rl-hyr/pymarl, stdin=<valid stream>, shell=False, universal_newlines=False)
+src/main.py:69: DeprecationWarning: Using or importing the ABCs from 'collections' instead of from 'collections.abc' is deprecated since Python 3.3, and in 3.10 it will stop working
+  if isinstance(v, collections.Mapping):
+[INFO 16:00:24] root Saving to FileStorageObserver in results/sacred.
+[DEBUG 16:00:25] pymarl Using capture mode "fd"
+[INFO 16:00:25] pymarl Running command 'my_main'
+[INFO 16:00:25] pymarl Started run with ID "1"
+[DEBUG 16:00:25] pymarl Starting Heartbeat
+[DEBUG 16:00:25] my_main Started
+[INFO 16:00:25] my_main Experiment Parameters:
+[INFO 16:00:25] my_main 
+
+{   'action_selector': 'epsilon_greedy',
+    'agent': 'rnn',
+    'agent_output_type': 'q',
+    'batch_size': 32,
+    'batch_size_run': 1,
+    'buffer_cpu_only': True,
+    'buffer_size': 5000,
+    'checkpoint_path': '',
+    'collect_transitions': True,
+    'critic_lr': 0.0005,
+    'double_q': True,
+    'env': 'sc2',
+    'env_args': {   'continuing_episode': False,
+                    'debug': False,
+                    'difficulty': '7',
+                    'game_version': None,
+                    'heuristic_ai': False,
+                    'heuristic_rest': False,
+                    'map_name': 'MMM2',
+                    'move_amount': 2,
+                    'obs_all_health': True,
+                    'obs_instead_of_state': False,
+                    'obs_last_action': False,
+                    'obs_own_health': True,
+                    'obs_pathing_grid': False,
+                    'obs_terrain_height': False,
+                    'obs_timestep_number': False,
+                    'replay_dir': '',
+                    'replay_prefix': '',
+                    'reward_death_value': 10,
+                    'reward_defeat': 0,
+                    'reward_negative_scale': 0.5,
+                    'reward_only_positive': True,
+                    'reward_scale': True,
+                    'reward_scale_rate': 20,
+                    'reward_sparse': False,
+                    'reward_win': 200,
+                    'seed': 44503029,
+                    'state_last_action': True,
+                    'state_timestep_number': False,
+                    'step_mul': 8},
+    'epsilon_anneal_time': 50000,
+    'epsilon_finish': 0.05,
+    'epsilon_start': 1.0,
+    'evaluate': False,
+    'gamma': 0.99,
+    'grad_norm_clip': 10,
+    'hypernet_embed': 64,
+    'hypernet_layers': 2,
+    'label': 'default_label',
+    'learner': 'q_learner',
+    'learner_log_interval': 10000,
+    'load_step': 0,
+    'local_results_path': 'results',
+    'log_interval': 10000,
+    'loss_weight': 0.5,
+    'lr': 0.0005,
+    'mac': 'basic_mac',
+    'mixer': 'qmix',
+    'mixing_embed_dim': 32,
+    'name': 'qmix',
+    'obs_agent_id': True,
+    'obs_last_action': True,
+    'optim_alpha': 0.99,
+    'optim_eps': 1e-05,
+    'repeat_id': 1,
+    'reward_batch_size': 32,
+    'reward_checkpoint_path': '',
+    'reward_mixer': False,
+    'reward_save_interval': 500000,
+    'reward_train': 1000000,
+    'reward_weight': 0.0,
+    'rnn_hidden_dim': 64,
+    'runner': 'episode',
+    'runner_log_interval': 10000,
+    'save_model': False,
+    'save_model_interval': 1000000,
+    'save_replay': False,
+    'save_reward_model': False,
+    'save_test_reward': False,
+    'save_train_reward': False,
+    'seed': 44503029,
+    't_max': 1000000,
+    'tag': 'original_qmix',
+    'target_update_interval': 200,
+    'test_greedy': True,
+    'test_interval': 10000,
+    'test_nepisode': 32,
+    'transitions_filename': None,
+    'two_stage_train': False,
+    'use_cuda': True,
+    'use_tensorboard': True,
+    'use_transitions': False}
+
+[DEBUG 16:00:25] h5py._conv Creating converter from 5 to 3
+[INFO 16:00:27] my_main Beginning training for 1000000 timesteps
+[INFO 16:00:27] absl Launching SC2: /mount/disk1/rl-hyr/StarCraftII/Versions/Base75689/SC2_x64 -listen 127.0.0.1 -port 45931 -dataDir /mount/disk1/rl-hyr/StarCraftII/ -tempDir /tmp/sc-8rynluof/
+[INFO 16:00:27] absl Connecting to: ws://127.0.0.1:45931/sc2api, attempt: 0, running: True
+Version: B75689 (SC2.4.10)
+Build: Aug 12 2019 17:16:57
+Command Line: '"/mount/disk1/rl-hyr/StarCraftII/Versions/Base75689/SC2_x64" -listen 127.0.0.1 -port 45931 -dataDir /mount/disk1/rl-hyr/StarCraftII/ -tempDir /tmp/sc-8rynluof/'
+Starting up...
+Startup Phase 1 complete
+[INFO 16:00:28] absl Connecting to: ws://127.0.0.1:45931/sc2api, attempt: 1, running: True
+Startup Phase 2 complete
+Creating stub renderer...
+Listening on: 127.0.0.1:45931
+Startup Phase 3 complete. Ready for commands.
+[INFO 16:00:29] absl Connecting to: ws://127.0.0.1:45931/sc2api, attempt: 2, running: True
+ConnectHandler: Request from 127.0.0.1:59950 accepted
+ReadyHandler: 127.0.0.1:59950 ready
+Requesting to join a single player game
+Configuring interface options
+Configure: raw interface enabled
+Configure: feature layer interface disabled
+Configure: score interface disabled
+Configure: render interface disabled
+Launching next game.
+Next launch phase started: 2
+Next launch phase started: 3
+Next launch phase started: 4
+Next launch phase started: 5
+Next launch phase started: 6
+Next launch phase started: 7
+Next launch phase started: 8
+Game has started.
+Using default stable ids, none found at: /mount/disk1/rl-hyr/StarCraftII/stableid.json
+Successfully loaded stable ids: GameData\stableid.json
+Sending ResponseJoinGame
+/mount/disk1/rl-hyr/pymarl/src/components/episode_buffer.py:103: UserWarning: Creating a tensor from a list of numpy.ndarrays is extremely slow. Please consider converting the list to a single numpy.ndarray with numpy.array() before converting to a tensor. (Triggered internally at ../torch/csrc/utils/tensor_new.cpp:245.)
+  v = th.tensor(v, dtype=dtype, device=self.device)
+/mount/disk1/rl-hyr/pymarl/src/components/episode_buffer.py:103: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).
+  v = th.tensor(v, dtype=dtype, device=self.device)
+[DEBUG 16:00:34] h5py._conv Creating converter from 3 to 5
+[INFO 16:00:34] my_main t_env: 37 / 1000000
+[INFO 16:00:34] my_main Estimated time left: 12 minutes, 43 seconds. Time passed: 7 seconds
+[INFO 16:02:05] my_main Updated target network
+[INFO 16:02:27] my_main Recent Stats | t_env:      10023 | Episode:      269
+battle_won_mean:           0.0000	dead_allies_mean:         10.0000	dead_enemies_mean:         0.0000	ep_length_mean:           37.0000
+epsilon:                   1.0000	grad_norm:                 1.5237	q_loss:                    0.0498	q_loss_1:                  0.0498
+q_taken_mean:              0.0019	return_mean:               1.0770	return_std:                0.0000	target_mean:               0.0188
+td_error_abs:              0.1765	test_battle_won_mean:      0.0000	test_dead_allies_mean:     8.2188	test_dead_enemies_mean:    0.0938
+test_ep_length_mean:     122.8438	test_return_mean:          0.8609	test_return_std:           0.7018	
+[INFO 16:02:28] my_main t_env: 10058 / 1000000
+[INFO 16:02:28] my_main Estimated time left: 3 hours, 6 minutes, 40 seconds. Time passed: 2 minutes, 1 seconds
+[INFO 16:03:24] my_main Updated target network
+[INFO 16:04:22] my_main Recent Stats | t_env:      20028 | Episode:      595
+battle_won_mean:           0.0000	dead_allies_mean:          9.9219	dead_enemies_mean:         0.0037	ep_length_mean:           37.1264
+epsilon:                   0.8096	grad_norm:                 0.8367	q_loss:                    0.0272	q_loss_1:                  0.0272
+q_taken_mean:              0.0071	return_mean:               1.5187	return_std:                0.2145	target_mean:               0.0168
+td_error_abs:              0.1137	test_battle_won_mean:      0.0000	test_dead_allies_mean:     8.8125	test_dead_enemies_mean:    1.0469
+test_ep_length_mean:      97.6562	test_return_mean:          2.6950	test_return_std:           0.7576	
+[INFO 16:04:22] my_main t_env: 20081 / 1000000
+[INFO 16:04:22] my_main Estimated time left: 3 hours, 6 minutes, 13 seconds. Time passed: 3 minutes, 55 seconds
+[INFO 16:04:30] my_main Updated target network
+[INFO 16:05:28] my_main Updated target network
+[INFO 16:06:17] my_main Recent Stats | t_env:      30048 | Episode:      982
+battle_won_mean:           0.0000	dead_allies_mean:          9.7859	dead_enemies_mean:         0.0229	ep_length_mean:           34.9681
+epsilon:                   0.6190	grad_norm:                 0.6250	q_loss:                    0.0214	q_loss_1:                  0.0214
+q_taken_mean:              0.0223	return_mean:               1.7761	return_std:                0.3081	target_mean:               0.0297
+td_error_abs:              0.1005	test_battle_won_mean:      0.0000	test_dead_allies_mean:     8.8750	test_dead_enemies_mean:    1.4896
+test_ep_length_mean:      73.7708	test_return_mean:          3.5627	test_return_std:           0.7406	
+[INFO 16:06:18] my_main t_env: 30097 / 1000000
+[INFO 16:06:18] my_main Estimated time left: 3 hours, 6 minutes, 28 seconds. Time passed: 5 minutes, 50 seconds
+[INFO 16:06:29] my_main Updated target network
+[INFO 16:07:23] my_main Updated target network
+[INFO 16:08:14] my_main Recent Stats | t_env:      40070 | Episode:     1388
+battle_won_mean:           0.0000	dead_allies_mean:          9.6391	dead_enemies_mean:         0.0611	ep_length_mean:           32.6963
+epsilon:                   0.4286	grad_norm:                 0.5645	q_loss:                    0.0193	q_loss_1:                  0.0193
+q_taken_mean:              0.0401	return_mean:               1.9607	return_std:                0.3755	target_mean:               0.0467
+td_error_abs:              0.0974	test_battle_won_mean:      0.0000	test_dead_allies_mean:     8.9062	test_dead_enemies_mean:    1.6172
+test_ep_length_mean:      61.6562	test_return_mean:          3.8639	test_return_std:           0.8126	
+[INFO 16:08:15] my_main t_env: 40116 / 1000000
+[INFO 16:08:15] my_main Estimated time left: 3 hours, 6 minutes, 40 seconds. Time passed: 7 minutes, 47 seconds
+[INFO 16:08:24] my_main Updated target network
+[INFO 16:09:21] my_main Updated target network
