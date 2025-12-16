@@ -2,6 +2,7 @@ import h5py
 import numpy as np
 import torch as th
 import json
+import time
 
 class TransitionStorage:
     def __init__(self, args, filename, max_size=50000):
@@ -11,6 +12,12 @@ class TransitionStorage:
         self.current_index = 0
         self.is_full = False
         
+        # 提取 episode_limit，用于内存预分配
+        if not th.is_tensor(self.args.env_info["episode_limit"]):
+            self.episode_limit = self.args.env_info["episode_limit"]
+        else:
+            self.episode_limit = self.args.env_info["episode_limit"].item()
+            
         self.scheme = {
             "state": {"vshape": (self.args.env_info["state_shape"],)},
             "obs": {"vshape": (self.args.env_info["obs_shape"],), "group": "agents"},
@@ -25,125 +32,226 @@ class TransitionStorage:
             "agents": self.args.env_info["n_agents"]
         }
         
+        # 优化点：初始化 HDF5 文件结构并加载数据到内存
+        self.in_memory_data = {}
         self._init_storage()
+        self._load_to_memory() 
     
     def _init_storage(self):
         """
-        初始化 HDF5 文件的结构
+        初始化 HDF5 文件的结构，如果文件存在则读取元数据。
         """
         with h5py.File(self.filename, 'a') as f:
-            """
-            对于旧文件
-            """
-            # 根据元数据设置索引
+            
+            # --- 对于旧文件：读取元数据 ---
             if 'metadata' in f.attrs:
                 metadata = json.loads(f.attrs['metadata'])
-                self.current_index = metadata['current_index']
-                self.is_full = metadata['is_full']
+                self.current_index = metadata.get('current_index', 0)
+                self.is_full = metadata.get('is_full', False)
                 return
             
-            """
-            对于新文件
-            """
-            # 创建 dataset
+            # --- 对于新文件：创建 dataset 并写入元数据 ---
             for key, info in self.scheme.items():
                 vshape = info["vshape"]
                 dtype = info.get("dtype", np.float32)
                 
-                # 设置分组数据的维度
+                # 设置维度：[max_size, episode_limit + 1, ...]
                 if "group" in info:
                     group_size = self.groups[info["group"]]
-                    actual_shape = (self.max_size, self.args.env_info["episode_limit"] + 1, group_size, *vshape)
-                # 设置非分组数据的维度
+                    actual_shape = (self.max_size, self.episode_limit + 1, group_size, *vshape)
                 else:
-                    actual_shape = (self.max_size, self.args.env_info["episode_limit"] + 1, *vshape)
+                    actual_shape = (self.max_size, self.episode_limit + 1, *vshape)
                 
                 if key not in f:
-                    f.create_dataset(key, actual_shape, dtype=dtype)
+                    # 使用 gzip 压缩，减少磁盘占用 (可选，但推荐)
+                    f.create_dataset(key, actual_shape, dtype=dtype, chunks=True, compression='gzip') 
             
             # 保存元数据
             metadata = {
                 'max_size': self.max_size,
                 'current_index': 0,
-                'is_full': False
+                'is_full': False,
+                'total_episodes': 0 
             }
             f.attrs['metadata'] = json.dumps(metadata)
 
-
+    def _load_to_memory(self):
+        """
+        优化点：将 HDF5 中的所有数据加载到内存中的字典，用于快速采样。
+        """
+        # 预分配内存空间，即使当前 HDF5 中没有数据
+        for key, info in self.scheme.items():
+            vshape = info["vshape"]
+            dtype = info.get("dtype", np.float32)
+            
+            if "group" in info:
+                group_size = self.groups[info["group"]]
+                actual_shape = (self.max_size, self.episode_limit + 1, group_size, *vshape)
+            else:
+                actual_shape = (self.max_size, self.episode_limit + 1, *vshape)
+            
+            # 预分配一个完整的 NumPy 数组
+            self.in_memory_data[key] = np.zeros(actual_shape, dtype=dtype)
+        
+        # 从 HDF5 文件加载已有的数据
+        with h5py.File(self.filename, 'r') as f:
+            if 'metadata' in f.attrs:
+                metadata = json.loads(f.attrs['metadata'])
+                total_episodes = metadata.get('total_episodes', 0)
+                
+                if total_episodes > 0:
+                    # HDF5 文件中有数据，需要处理环形 buffer 的读取逻辑
+                    current_index = metadata['current_index']
+                    is_full = metadata['is_full']
+                    
+                    for key in self.scheme.keys():
+                        if key in f:
+                            dataset = f[key]
+                            
+                            if is_full:
+                                # 1. 读出从 current_index 到 max_size 的部分 (旧数据)
+                                idx_start_old = current_index
+                                idx_end_old = self.max_size
+                                data_old = np.array(dataset[idx_start_old:idx_end_old])
+                                
+                                # 2. 读出从 0 到 current_index 的部分 (新数据)
+                                idx_start_new = 0
+                                idx_end_new = current_index
+                                data_new = np.array(dataset[idx_start_new:idx_end_new])
+                                
+                                # 3. 重新拼接成逻辑上的连续数组
+                                # 拼接顺序：[新数据段] + [旧数据段]
+                                self.in_memory_data[key][:current_index] = data_new
+                                self.in_memory_data[key][current_index:] = data_old
+                                
+                            else:
+                                # 直接读出从 0 到 current_index 的部分
+                                self.in_memory_data[key][:current_index] = np.array(dataset[:current_index])
+    
     def save_transition_batch(self, batch_data):
         """
-        保存一个 batch 的 transition
+        同时写入 HDF5 文件和内存中的 Replay Buffer。
         """
         with h5py.File(self.filename, 'a') as f:
             batch_size = None
-            
-            # 确定 batch_size
+
+            # 确定 batch_size（episode 数）
             for key in self.scheme.keys():
-                if key in batch_data.data.transition_data:
-                    batch_size = batch_data[key].shape[0]  # [batch_size, ...]
-                break
-            
+                # 假设 batch_data 是一个结构，包含 transition_data 属性
+                if hasattr(batch_data.data, 'transition_data') and key in batch_data.data.transition_data:
+                    batch_size = batch_data[key].shape[0]  # [batch, ep_len, ...]
+                    break
+                # 如果 batch_data 直接是字典或类似结构
+                elif isinstance(batch_data, dict) and key in batch_data:
+                    batch_size = batch_data[key].shape[0]
+                    break
+                    
             if batch_size is None:
                 raise ValueError("No valid data found in batch_data")
-            
-            # 计算存储位置
+
             start_idx = self.current_index
             end_idx = self.current_index + batch_size
-            
+
+            is_wrapping = False # 是否发生循环覆盖
             if end_idx > self.max_size:
-                # 循环覆盖
-                end_idx = self.max_size
+                is_wrapping = True
                 self.is_full = True
-                batch_size = self.max_size - self.current_index
-            
-            # 保存每个字段的数据
-            for key in self.scheme.keys():
-                if key in batch_data.data.transition_data:
-                    data = batch_data[key]
-                    
-                    # 确保数据在 CPU 上并且是 numpy 数组
+                
+                # 截断到剩余空间
+                write_size_part1 = self.max_size - self.current_index
+                write_size_part2 = batch_size - write_size_part1
+                
+                # 写入到末尾
+                for key in self.scheme.keys():
+                    if hasattr(batch_data.data, 'transition_data') and key in batch_data.data.transition_data:
+                        data = batch_data[key]
+                    elif isinstance(batch_data, dict) and key in batch_data:
+                        data = batch_data[key]
+                    else:
+                        continue
+                        
                     if th.is_tensor(data):
                         data = data.cpu().numpy()
+
+                    # Part 1: 写入到 HDF5 的末尾
+                    actual_data_part1 = data[:write_size_part1]
+                    f[key][start_idx:self.max_size] = actual_data_part1
                     
-                    # 截取实际可存储的数据量
+                    # 写入到内存的末尾
+                    self.in_memory_data[key][start_idx:self.max_size] = actual_data_part1
+
+                    # Part 2: 从 HDF5 的开头写入 (覆盖)
+                    actual_data_part2 = data[write_size_part1:]
+                    f[key][0:write_size_part2] = actual_data_part2
+                    
+                    # 写入到内存的开头
+                    self.in_memory_data[key][0:write_size_part2] = actual_data_part2
+                
+                # 更新指针：回到开头
+                self.current_index = write_size_part2
+                
+            else:
+                # 连续写入，未发生循环覆盖
+                for key in self.scheme.keys():
+                    if hasattr(batch_data.data, 'transition_data') and key in batch_data.data.transition_data:
+                        data = batch_data[key]
+                    elif isinstance(batch_data, dict) and key in batch_data:
+                        data = batch_data[key]
+                    else:
+                        continue
+                        
+                    if th.is_tensor(data):
+                        data = data.cpu().numpy()
+
                     actual_data = data[:batch_size]
                     
-                    # 保存到 HDF5 数据集
+                    # 写入 HDF5
                     f[key][start_idx:end_idx] = actual_data
-            
-            # 更新索引
-            self.current_index = end_idx % self.max_size
-            
+                    
+                    # 写入内存
+                    self.in_memory_data[key][start_idx:end_idx] = actual_data
+                    
+                # 更新指针
+                self.current_index = end_idx
+
             # 更新元数据
             metadata = json.loads(f.attrs['metadata'])
             metadata['current_index'] = self.current_index
             metadata['is_full'] = self.is_full
-            metadata['total_stored'] = end_idx if not self.is_full else self.max_size
+            metadata['total_episodes'] = self.max_size if self.is_full else self.current_index
             f.attrs['metadata'] = json.dumps(metadata)
 
 
     def load_transition_batch(self, batch_size=32):
         """
-        加载一个 batch 的 transition
+        优化点：完全从内存中采样读取，无需 HDF5 I/O，速度极快。
         """
-        with h5py.File(self.filename, 'r') as f: 
-            # 获取 total_stored
-            metadata = json.loads(f.attrs['metadata'])
-            total_stored = metadata.get('total_stored', 0)
+        # 计算已存储的 episode 总数
+        total_episodes = self.max_size if self.is_full else self.current_index
 
-            # 生成随机索引 (放回采样)
-            random_indices = np.random.choice(total_stored, size=batch_size, replace=True)
+        if total_episodes == 0:
+            raise ValueError("No episode stored in the buffer.")
 
-            batch_data = {}
-            for key in self.scheme.keys():
-                if key in f:
-                    batch_data[key] = np.array(f[key])[random_indices]
-            
-            return batch_data
+        # 随机选择索引
+        random_indices = np.random.choice(total_episodes, size=batch_size, replace=True)
+
+        batch_data = {}
+        start_time = time.time()
+        
+        # 批量切片：只进行内存操作
+        for key in self.scheme.keys():
+            if key in self.in_memory_data:
+                # 内存切片速度比 HDF5 I/O 快得多
+                batch_data[key] = self.in_memory_data[key][random_indices]
+                
+        end_time = time.time()
+        print(f"内存采样耗时: {(end_time - start_time):.4f} 秒")
+
+        return batch_data
 
 
 if __name__ == "__main__":
-    file_path = "results/collected_transitions/transitions_999__3s5z__qmix__2025-11-21_19-41-18.h5"
+    file_path = "results/collected_transitions/transitions_1.h5"
     batch_size = 32
     
     with h5py.File(file_path, 'r') as f:
