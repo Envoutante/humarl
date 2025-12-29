@@ -13,7 +13,9 @@ import yaml
 
 from run import run
 
-SETTINGS['CAPTURE_MODE'] = "fd"  # set to "no" if you want to see stdout/stderr in console
+SETTINGS["CAPTURE_MODE"] = (
+    "fd"  # set to "no" if you want to see stdout/stderr in console
+)
 logger = get_logger()
 
 ex = Experiment("pymarl")
@@ -29,7 +31,7 @@ def my_main(_run, _config, _log):
     config = config_copy(_config)
     np.random.seed(config["seed"])
     th.manual_seed(config["seed"])
-    config['env_args']['seed'] = config["seed"]
+    config["env_args"]["seed"] = config["seed"]
 
     # run the framework
     run(_run, config, _log)
@@ -44,8 +46,15 @@ def _get_config(params, arg_name, subfolder):
             break
 
     if config_name is not None:
-        with open(os.path.join(os.path.dirname(__file__), "config", subfolder, "{}.yaml".format(config_name)),
-                  "r") as f:
+        with open(
+            os.path.join(
+                os.path.dirname(__file__),
+                "config",
+                subfolder,
+                "{}.yaml".format(config_name),
+            ),
+            "r",
+        ) as f:
             try:
                 config_dict = yaml.safe_load(f)
             except yaml.YAMLError as exc:
@@ -82,11 +91,13 @@ def config_copy(config):
         return deepcopy(config)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     params = deepcopy(sys.argv)
 
     # 从 default.yaml 中获取默认配置并存放入 config_dict 中
-    with open(os.path.join(os.path.dirname(__file__), "config", "default.yaml"), "r") as f:
+    with open(
+        os.path.join(os.path.dirname(__file__), "config", "default.yaml"), "r"
+    ) as f:
         try:
             config_dict = yaml.safe_load(f)
         except yaml.YAMLError as exc:
@@ -98,7 +109,7 @@ if __name__ == '__main__':
     # 根据 env_config 和 alg_config 更新 config_dict 中关于环境和算法的配置
     config_dict = recursive_dict_update(config_dict, env_config)
     config_dict = recursive_dict_update(config_dict, alg_config)
-    
+
     # 解析 --tag 参数并添加到 config_dict 中
     tag_value = _get_param_value(params, "--tag")
     if tag_value is not None:
@@ -114,4 +125,3 @@ if __name__ == '__main__':
 
     # 根据命令行参数 with ... 执行被 @ex.main 装饰的实验主函数
     ex.run_commandline(params)
- 

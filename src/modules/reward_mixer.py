@@ -14,13 +14,16 @@ class RewardMixer(nn.Module):
         self.unit_dim = args.unit_dim
 
         # 个体 reward 网络 - 所有智能体共享参数
-        self.individual_reward_net = nn.Sequential(
+        # 将最后一层单独定义以便初始化偏置
+        self.individual_reward_net_hidden = nn.Sequential(
             nn.Linear(self.state_dim + self.action_dim + self.unit_dim, 64),
             nn.ReLU(),
             nn.Linear(64, 32),
             nn.ReLU(),
-            nn.Linear(32, 1)
         )
+        self.individual_reward_net_final = nn.Linear(32, 1)
+        # 将最后一层的偏置初始化为小的正数，确保初始输出不是 0
+        nn.init.constant_(self.individual_reward_net_final.bias, 0.1)
 
         # 全局 reward 聚合网络的超网络 - 基于全局 state 生成权重和偏置
         self.embed_dim = getattr(args, "mixing_embed_dim", 32)
@@ -57,29 +60,57 @@ class RewardMixer(nn.Module):
         actions_onehot = ep_batch["actions_onehot"][:, :-1]
         state = ep_batch["state"][:, :-1]
 
-        batch_size, seq_len, n_agents, _ = actions_onehot.shape  # actions_onehot: [batch_size, seq_len, n_agents, action_dim]
+        batch_size, seq_len, n_agents, _ = (
+            actions_onehot.shape
+        )  # actions_onehot: [batch_size, seq_len, n_agents, action_dim]
 
         # 计算个体reward（共享参数的网络）
         # QPLEX
-        state_flat = state.reshape(-1, self.state_dim)  # [batch_size * seq_len, state_dim]
-        unit_flat = state_flat[:, : self.unit_dim * self.n_agents]  # [batch_size * seq_len, unit_dim * n_agents]
-        unit_flat = unit_flat.reshape(-1, self.n_agents, self.unit_dim)  # [batch_size * seq_len, n_agents, unit_dim]
-        unit_flat = unit_flat.reshape(-1, self.unit_dim)  # [batch_size * seq_len * n_agents, unit_dim]
+        state_flat = state.reshape(
+            -1, self.state_dim
+        )  # [batch_size * seq_len, state_dim]
+        unit_flat = state_flat[
+            :, : self.unit_dim * self.n_agents
+        ]  # [batch_size * seq_len, unit_dim * n_agents]
+        unit_flat = unit_flat.reshape(
+            -1, self.n_agents, self.unit_dim
+        )  # [batch_size * seq_len, n_agents, unit_dim]
+        unit_flat = unit_flat.reshape(
+            -1, self.unit_dim
+        )  # [batch_size * seq_len * n_agents, unit_dim]
 
         # 展平 state、action
         # 将全局 state 广播到每个 agent
-        state_expanded = state.unsqueeze(2).expand(batch_size, seq_len, n_agents, self.state_dim)  # [batch_size, seq_len, n_agents, state_dim]
-        state_flat = state_expanded.reshape(-1, self.state_dim)  # [batch_size * seq_len * n_agents, state_dim]
-        actions_flat = actions_onehot.reshape(-1, self.action_dim)  # [batch_size * seq_len * n_agents, action_dim]
+        state_expanded = state.unsqueeze(2).expand(
+            batch_size, seq_len, n_agents, self.state_dim
+        )  # [batch_size, seq_len, n_agents, state_dim]
+        state_flat = state_expanded.reshape(
+            -1, self.state_dim
+        )  # [batch_size * seq_len * n_agents, state_dim]
+        actions_flat = actions_onehot.reshape(
+            -1, self.action_dim
+        )  # [batch_size * seq_len * n_agents, action_dim]
 
         # 拼接 state、action、unit_state
-        agent_inputs = torch.cat([state_flat, actions_flat, unit_flat], dim=-1)  # [batch_size * seq_len * n_agents, state_dim + action_dim + unit_dim]
+        agent_inputs = torch.cat(
+            [state_flat, actions_flat, unit_flat], dim=-1
+        )  # [batch_size * seq_len * n_agents, state_dim + action_dim + unit_dim]
 
-        individual_rewards_flat = self.individual_reward_net(agent_inputs)  # [batch_size * seq_len * n_agents, 1]
-        individual_rewards = individual_rewards_flat.view(batch_size, seq_len, n_agents, 1)  # [batch_size, seq_len, n_agents, 1]
+        # 使用 Softplus 替代 ReLU，确保输出非负且有平滑梯度
+        hidden_out = self.individual_reward_net_hidden(
+            agent_inputs
+        )  # [batch_size * seq_len * n_agents, 32]
+        individual_rewards_flat = F.softplus(
+            self.individual_reward_net_final(hidden_out)
+        )  # [batch_size * seq_len * n_agents, 1]
+        individual_rewards = individual_rewards_flat.view(
+            batch_size, seq_len, n_agents, 1
+        )  # [batch_size, seq_len, n_agents, 1]
 
         # 使用超网络聚合全局 reward
-        global_reward_pred = self._aggregate_global_reward(individual_rewards, state)  # [batch_size, seq_len, 1]
+        global_reward_pred = self._aggregate_global_reward(
+            individual_rewards, state
+        )  # [batch_size, seq_len, 1]
 
         return individual_rewards, global_reward_pred
 
@@ -105,4 +136,3 @@ class RewardMixer(nn.Module):
         global_reward_pred = y.view(batch_size, seq_len, 1)
 
         return global_reward_pred
-
