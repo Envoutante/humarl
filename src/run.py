@@ -28,16 +28,21 @@ def run(_run, _config, _log):
     logger = Logger(_log)
 
     _log.info("Experiment Parameters:")
-    experiment_params = pprint.pformat(_config,
-                                       indent=4,
-                                       width=1)
+    experiment_params = pprint.pformat(_config, indent=4, width=1)
     _log.info("\n\n" + experiment_params + "\n")
 
     # 配置日志中的 Tensorboard 相关内容
-    unique_token = "{}__{}__{}__{}".format(args.tag, args.env_args['map_name'], args.name, datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
+    unique_token = "{}__{}__{}__{}".format(
+        args.tag,
+        args.env_args["map_name"],
+        args.name,
+        datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
+    )
     args.unique_token = unique_token
     if args.use_tensorboard:
-        tb_logs_direc = os.path.join(dirname(dirname(abspath(__file__))), "results", "tb_logs")
+        tb_logs_direc = os.path.join(
+            dirname(dirname(abspath(__file__))), "results", "tb_logs"
+        )
         tb_exp_direc = os.path.join(tb_logs_direc, "{}").format(unique_token)
         logger.setup_tb(tb_exp_direc)
 
@@ -74,6 +79,7 @@ def evaluate_sequential(args, runner):
 
     runner.close_env()
 
+
 def run_sequential(args, logger):
 
     # 实例化 runner 以获得环境信息
@@ -99,21 +105,26 @@ def run_sequential(args, logger):
         "state": {"vshape": env_info["state_shape"]},
         "obs": {"vshape": env_info["obs_shape"], "group": "agents"},
         "actions": {"vshape": (1,), "group": "agents", "dtype": th.long},
-        "avail_actions": {"vshape": (env_info["n_actions"],), "group": "agents", "dtype": th.int},
+        "avail_actions": {
+            "vshape": (env_info["n_actions"],),
+            "group": "agents",
+            "dtype": th.int,
+        },
         "reward": {"vshape": (1,)},
         "terminated": {"vshape": (1,), "dtype": th.uint8},
     }
-    groups = {
-        "agents": args.n_agents
-    }
-    preprocess = {
-        "actions": ("actions_onehot", [OneHot(out_dim=args.n_actions)])
-    }
+    groups = {"agents": args.n_agents}
+    preprocess = {"actions": ("actions_onehot", [OneHot(out_dim=args.n_actions)])}
 
     # 实例化 buffer (基于 scheme 和 groups)
-    buffer = ReplayBuffer(scheme, groups, args.buffer_size, env_info["episode_limit"] + 1,
-                          preprocess=preprocess,
-                          device="cpu" if args.buffer_cpu_only else args.device)
+    buffer = ReplayBuffer(
+        scheme,
+        groups,
+        args.buffer_size,
+        env_info["episode_limit"] + 1,
+        preprocess=preprocess,
+        device="cpu" if args.buffer_cpu_only else args.device,
+    )
 
     # 实例化 controller (multiagent controller, mac)
     mac = mac_REGISTRY[args.mac](buffer.scheme, groups, args)
@@ -136,7 +147,14 @@ def run_sequential(args, logger):
         load_model(learner, args, logger, runner, args.checkpoint_path)
 
     if args.reward_checkpoint_path != "":
-        load_model(learner, args, logger, runner, args.reward_checkpoint_path, is_reward_model=True)
+        load_model(
+            learner,
+            args,
+            logger,
+            runner,
+            args.reward_checkpoint_path,
+            is_reward_model=True,
+        )
 
     # 开始训练
     episode = 0
@@ -159,8 +177,10 @@ def run_sequential(args, logger):
         reward_last_log_T = 0
         reward_model_save_time = 0
 
-        while reward_t_env <= 5 * args.reward_train:
-            reward_t_env = learner.train_reward_network(None, reward_t_env, reward_episode)
+        while reward_t_env <= args.reward_train:
+            reward_t_env = learner.train_reward_network(
+                None, reward_t_env, reward_episode
+            )
             reward_episode += args.reward_batch_size
 
             # 打印日志
@@ -174,13 +194,21 @@ def run_sequential(args, logger):
              * @modified 2025-11-25-17:17
              * @description 保存 reward 模型
             """
-            if args.save_reward_model and (reward_t_env - reward_model_save_time >= args.save_model_interval or reward_model_save_time == 0):
+            if args.save_reward_model and (
+                reward_t_env - reward_model_save_time >= args.save_model_interval
+                or reward_model_save_time == 0
+            ):
                 reward_model_save_time = reward_t_env
                 reward_model_save_path = os.path.join(
-                    args.local_results_path, "reward_models", args.unique_token, str(reward_t_env)
+                    args.local_results_path,
+                    "reward_models",
+                    args.unique_token,
+                    str(reward_t_env),
                 )
                 os.makedirs(reward_model_save_path, exist_ok=True)
-                logger.console_logger.info("Saving reward models to {}".format(reward_model_save_path))
+                logger.console_logger.info(
+                    "Saving reward models to {}".format(reward_model_save_path)
+                )
                 learner.save_reward_models(reward_model_save_path)
 
     """
@@ -216,10 +244,16 @@ def run_sequential(args, logger):
         n_test_runs = max(1, args.test_nepisode // runner.batch_size)
         if (runner.t_env - last_test_T) / args.test_interval >= 1.0:
 
-            logger.console_logger.info("t_env: {} / {}".format(runner.t_env, args.t_max))
-            logger.console_logger.info("Estimated time left: {}. Time passed: {}".format(
-                time_left(last_time, last_test_T, runner.t_env, args.t_max), time_str(time.time() - start_time)))
-            
+            logger.console_logger.info(
+                "t_env: {} / {}".format(runner.t_env, args.t_max)
+            )
+            logger.console_logger.info(
+                "Estimated time left: {}. Time passed: {}".format(
+                    time_left(last_time, last_test_T, runner.t_env, args.t_max),
+                    time_str(time.time() - start_time),
+                )
+            )
+
             last_time = time.time()
             last_test_T = runner.t_env
 
@@ -227,9 +261,14 @@ def run_sequential(args, logger):
                 runner.run(test_mode=True)
 
         # 保存模型
-        if args.save_model and (runner.t_env - model_save_time >= args.save_model_interval or model_save_time == 0):
+        if args.save_model and (
+            runner.t_env - model_save_time >= args.save_model_interval
+            or model_save_time == 0
+        ):
             model_save_time = runner.t_env
-            save_path = os.path.join(args.local_results_path, "models", args.unique_token, str(runner.t_env))
+            save_path = os.path.join(
+                args.local_results_path, "models", args.unique_token, str(runner.t_env)
+            )
             # "results/models/{}".format(unique_token)
             os.makedirs(save_path, exist_ok=True)
             logger.console_logger.info("Saving models to {}".format(save_path))
@@ -255,47 +294,53 @@ def args_sanity_check(config, _log):
     # config["use_cuda"] = True # Use cuda whenever possible!
     if config["use_cuda"] and not th.cuda.is_available():
         config["use_cuda"] = False
-        _log.warning("CUDA flag use_cuda was switched OFF automatically because no CUDA devices are available!")
+        _log.warning(
+            "CUDA flag use_cuda was switched OFF automatically because no CUDA devices are available!"
+        )
 
     if config["test_nepisode"] < config["batch_size_run"]:
         config["test_nepisode"] = config["batch_size_run"]
     else:
-        config["test_nepisode"] = (config["test_nepisode"]//config["batch_size_run"]) * config["batch_size_run"]
+        config["test_nepisode"] = (
+            config["test_nepisode"] // config["batch_size_run"]
+        ) * config["batch_size_run"]
 
     return config
 
 
 def load_model(learner, args, logger, runner, checkpoint_path, is_reward_model=False):
-        timesteps = []
-        timestep_to_load = 0
+    timesteps = []
+    timestep_to_load = 0
 
-        if not os.path.isdir(checkpoint_path):
-            logger.console_logger.info("Checkpoint directiory {} doesn't exist".format(checkpoint_path))
-            return
+    if not os.path.isdir(checkpoint_path):
+        logger.console_logger.info(
+            "Checkpoint directiory {} doesn't exist".format(checkpoint_path)
+        )
+        return
 
-        # Go through all files in checkpoint_path
-        for name in os.listdir(checkpoint_path):
-            full_name = os.path.join(checkpoint_path, name)
-            # Check if they are dirs the names of which are numbers
-            if os.path.isdir(full_name) and name.isdigit():
-                timesteps.append(int(name))
+    # Go through all files in checkpoint_path
+    for name in os.listdir(checkpoint_path):
+        full_name = os.path.join(checkpoint_path, name)
+        # Check if they are dirs the names of which are numbers
+        if os.path.isdir(full_name) and name.isdigit():
+            timesteps.append(int(name))
 
-        if args.load_step == 0:
-            # choose the max timestep
-            timestep_to_load = max(timesteps)
-        else:
-            # choose the timestep closest to load_step
-            timestep_to_load = min(timesteps, key=lambda x: abs(x - args.load_step))
+    if args.load_step == 0:
+        # choose the max timestep
+        timestep_to_load = max(timesteps)
+    else:
+        # choose the timestep closest to load_step
+        timestep_to_load = min(timesteps, key=lambda x: abs(x - args.load_step))
 
-        model_path = os.path.join(checkpoint_path, str(timestep_to_load))
+    model_path = os.path.join(checkpoint_path, str(timestep_to_load))
 
-        logger.console_logger.info("Loading model from {}".format(model_path))
-        if not is_reward_model:
-            learner.load_models(model_path)
-            runner.t_env = timestep_to_load
-        else:
-            learner.load_reward_models(model_path)
+    logger.console_logger.info("Loading model from {}".format(model_path))
+    if not is_reward_model:
+        learner.load_models(model_path)
+        runner.t_env = timestep_to_load
+    else:
+        learner.load_reward_models(model_path)
 
-        if args.evaluate or args.save_replay:
-            evaluate_sequential(args, runner)
-            return
+    if args.evaluate or args.save_replay:
+        evaluate_sequential(args, runner)
+        return
