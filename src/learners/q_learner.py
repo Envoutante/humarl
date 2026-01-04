@@ -136,16 +136,18 @@ class QLearner:
         reward_error = global_reward_pred - true_global_rewards
         reward_mask = mask.expand_as(reward_error)
         masked_reward_error = reward_error * reward_mask
-        reward_loss = (masked_reward_error**2).sum() / reward_mask.sum()
+        training_reward_loss = (masked_reward_error**2).sum() / reward_mask.sum()
 
         # 反向传播
         self.reward_optimizer.zero_grad()
-        reward_loss.backward()
+        training_reward_loss.backward()
         self.reward_optimizer.step()
 
         # 记录日志
         if t_env - self.reward_log_t >= self.args.learner_log_interval:
-            self.logger.log_stat("reward_loss", reward_loss.item(), t_env)
+            self.logger.log_stat(
+                "reward_loss/train", training_reward_loss.item(), t_env
+            )
             self.reward_log_t = t_env
 
         return t_env
@@ -211,7 +213,19 @@ class QLearner:
         if self.args.reward_mixer:
             # 计算个体 reward
             with th.no_grad():
-                individual_rewards, _ = self.reward_mixer(batch)
+                individual_rewards, global_reward_pred = self.reward_mixer(batch)
+
+            """
+             * @author hyr
+             * @modified 2026-01-04-10:19
+             * @description 记录奖励网络在测试阶段中的损失
+            """
+            true_global_rewards = batch["reward"][:, :-1]
+            reward_error = global_reward_pred - true_global_rewards
+            reward_mask = mask.expand_as(reward_error)
+            masked_reward_error = reward_error * reward_mask
+            testing_reward_loss = (masked_reward_error**2).sum() / reward_mask.sum()
+
             # 对个体 reward 进行掩码
             masked_individual_rewards = individual_rewards.squeeze(-1) * mask
             individual_rewards = (
@@ -298,6 +312,9 @@ class QLearner:
             self.logger.log_stat("q_loss", q_loss.item(), t_env)
             if self.args.reward_mixer:
                 self.logger.log_stat("q_loss_2", q_loss_2.item(), t_env)
+                self.logger.log_stat(
+                    "reward_loss/test", testing_reward_loss.item(), t_env
+                )
             self.logger.log_stat("q_loss_1", q_loss_1.item(), t_env)
             self.logger.log_stat("grad_norm", grad_norm, t_env)
             mask_elems = q_mask.sum().item()
