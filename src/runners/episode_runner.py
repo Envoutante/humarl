@@ -29,21 +29,28 @@ class EpisodeRunner:
         self.log_train_stats_t = -1000000
 
         """
-        新增
-        测试阶段 reward 结构化日志文件（按实验 token 区分）
+         * @author hyr
+         * @modified 2026-01-05-15:49
+         * @description 初始化 episode return 日志文件（仅在需要记录时初始化）
         """
-        if self.args.save_test_reward:
-            rewards_log_dir = os.path.join(os.path.abspath(self.args.local_results_path), "reward_logs")
-            os.makedirs(rewards_log_dir, exist_ok=True)
+        self.episode_return_log_path = None
+        if self.args.log_episode_return:
+            episode_return_log_dir = os.path.join(
+                os.path.abspath(self.args.local_results_path), "episode_return_logs"
+            )
+            os.makedirs(episode_return_log_dir, exist_ok=True)
             unique_token = getattr(self.args, "unique_token", "default")
-            self.rewards_log_path = os.path.join(rewards_log_dir, f"rewards_{unique_token}.csv")
-            if not os.path.exists(self.rewards_log_path):
-                with open(self.rewards_log_path, "w", encoding="utf-8") as f:
-                    f.write("episode_idx, step_0, step_1, ...\n")
+            self.episode_return_log_path = os.path.join(
+                episode_return_log_dir, f"episode_returns_{unique_token}.csv"
+            )
+            if not os.path.exists(self.episode_return_log_path):
+                with open(self.episode_return_log_path, "w", encoding="utf-8") as f:
+                    f.write("episode_idx, episode_return\n")
 
         """
-        新增
-        离线强化学习数据收集：存储训练时的 transitions
+         * @author hyr
+         * @modified 2026-01-05-15:49
+         * @description 初始化 TransitionStorage, 用于存储训练时的 transitions
         """
         self.args.env_info = self.get_env_info()
         if self.args.collect_transitions:
@@ -80,12 +87,6 @@ class EpisodeRunner:
         episode_return = 0
         self.mac.init_hidden(batch_size=self.batch_size)
 
-        """
-        新增
-        记录每个 episode 的所有 reward
-        """
-        episode_rewards = [] if test_mode and self.args.save_test_reward else None
-
         while not terminated:
 
             # 收集状态转移前的数据并存入 self.batch
@@ -102,13 +103,6 @@ class EpisodeRunner:
             # 在环境中执行动作
             reward, terminated, env_info = self.env.step(actions[0])
             episode_return += reward  # 更新当前回合的总奖励 episode_return
-
-            """
-            新增
-            记录每个时间步的 reward
-            """
-            if test_mode and self.args.save_test_reward:
-                episode_rewards.append(reward)
 
             # 收集状态转移后的数据并存入 self.batch
             post_transition_data = {
@@ -147,18 +141,19 @@ class EpisodeRunner:
         cur_returns.append(episode_return)
 
         """
-        新增
-        把记录的 reward 写入 csv 文件
+         * @author hyr
+         * @modified 2026-01-05-15:49
+         * @description 记录每个 episode 的 reward 之和到 CSV 文件（仅在 test_mode 且需要记录时）
         """
-        if test_mode and self.args.save_test_reward and episode_rewards:
-            episode_idx = len(self.test_returns)
-            row = ", ".join([str(episode_idx)] + [str(reward) for reward in episode_rewards])
-            with open(self.rewards_log_path, "a", encoding="utf-8") as rewards_file:
-                rewards_file.write(f"{row}\n")
+        if test_mode and self.args.log_episode_return and self.episode_return_log_path is not None:
+            episode_idx = len(cur_returns) - 1  # 当前 episode 的序号（从0开始）
+            with open(self.episode_return_log_path, "a", encoding="utf-8") as f:
+                f.write(f"{episode_idx}, {episode_return}\n")
 
         """
-        新增
-        保存训练时的 transitions 用于离线强化学习
+         * @author hyr
+         * @modified 2026-01-05-15:49
+         * @description 保存训练时的 transitions 用于离线强化学习
         """
         if not test_mode and self.args.collect_transitions and self.transition_storage is not None:
             self.transition_storage.save_transition_batch(self.batch)

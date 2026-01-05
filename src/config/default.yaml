@@ -17,15 +17,14 @@ use_cuda: True # Use gpu by default unless it isn't available
 buffer_cpu_only: True # If true we won't keep all of the replay buffer in vram
 
 # --- Reward options ---
-save_train_reward: False # 是否记录训练时的 reward
-save_test_reward: False # 是否记录测试时的 reward
+log_episode_return: False # 是否记录每个 episode 的 reward 之和
 save_reward_model: False # 是否保存 reward 网络模型
 reward_mixer: False # 是否使用个体 reward
 reward_weight: 0.0 # 全局 reward 的权重
 loss_weight: 0.5
 reward_train: 1000000 # 训练 reward 网络多少步
 reward_batch_size: 32 # reward 网络训练的 batch size
-reward_save_interval: 500000
+reward_save_interval: 1000000 # 记录预测的个体 reward 的间隔
 reward_checkpoint_path: "" # 预训练 reward 网络路径
 
 # --- Transition options ---

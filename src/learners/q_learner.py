@@ -66,7 +66,7 @@ class QLearner:
          * @description 记录 individual_rewards
         """
         self.individual_rewards_log_path = None
-        if self.args.save_train_reward and self.args.reward_mixer:
+        if self.args.reward_mixer:
             logs_dir = os.path.join(
                 os.path.abspath(self.args.local_results_path), "individual_reward_logs"
             )
@@ -77,7 +77,10 @@ class QLearner:
             )
             if not os.path.exists(self.individual_rewards_log_path):
                 with open(self.individual_rewards_log_path, "w", encoding="utf-8") as f:
-                    f.write("episode_idx, step_0, step_1, ...\n")
+                    header_cells = ["episode_idx", "total_reward"] + [
+                        f"step_{i}" for i in range(self.args.episode_limit)
+                    ]
+                    f.write(", ".join(header_cells) + "\n")
 
         """
          * @author hyr
@@ -97,7 +100,6 @@ class QLearner:
     """
     训练 reward 网络
     """
-
     def train_reward_network(self, batch: EpisodeBatch, t_env: int, episode_num: int):
         if not self.args.reward_mixer:
             return None, None
@@ -155,7 +157,6 @@ class QLearner:
     """
     训练 Q 网络
     """
-
     def train_q_network(self, batch: EpisodeBatch, t_env: int, episode_num: int):
         # 从 batch 中取出相关数据
         rewards = batch["reward"][:, :-1]
@@ -351,6 +352,8 @@ class QLearner:
             batch_size, seq_len, _ = individual_rewards.shape
             for episode in range(batch_size):
                 step_cells = []
+                # 计算当前 episode 在所有时间步上的 reward 之和
+                episode_total_reward = rewards[episode, :seq_len].sum().item()
                 for t_idx in range(seq_len):
                     total_reward = rewards[episode, t_idx].item()
                     # 修改：使用分号 ; 代替逗号，避免破坏 CSV 列结构
@@ -362,7 +365,8 @@ class QLearner:
                     step_cells.append(cell)
 
                 episode_idx = episode_num + episode
-                row = ", ".join([str(episode_idx)] + step_cells)
+                # 在第一个时间步 reward 前增加一列：当前 episode 的所有 reward 之和
+                row = ", ".join([str(episode_idx), str(episode_total_reward)] + step_cells)
                 with open(self.individual_rewards_log_path, "a", encoding="utf-8") as f:
                     f.write(row + "\n")
 
