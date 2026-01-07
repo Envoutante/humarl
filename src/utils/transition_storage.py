@@ -8,7 +8,7 @@ import os
 
 
 class TransitionStorage:
-    def __init__(self, args, filename, max_size=50000):
+    def __init__(self, args, filename, max_size=200000):
         self.args = args
         self.filename = filename
         self.max_size = max_size
@@ -65,6 +65,57 @@ class TransitionStorage:
             }
             f.attrs["metadata"] = json.dumps(metadata)
 
+            # 记录每个 episode 的实际 step 数
+            f.create_dataset(
+                "step_counts",
+                (self.max_size,),
+                dtype=np.int32,
+                fillvalue=-1,
+                compression="gzip",
+                compression_opts=4,
+            )
+
+    def _get_data_from_batch(self, batch_data, key):
+        """
+        兼容 RecoderBatch / dict 两种输入方式, 获取对应字段数据
+        """
+        if hasattr(batch_data, "data") and hasattr(batch_data.data, "transition_data"):
+            if key in batch_data.data.transition_data:
+                return batch_data[key]
+        if isinstance(batch_data, dict) and key in batch_data:
+            return batch_data[key]
+        return None
+
+    def _infer_episode_steps(self, batch_data, ep_idx):
+        """
+        根据 filled 或 terminated 字段推断某个 episode 的有效步数
+        优先使用 filled 的累加，其次使用 terminated 首次出现的位置
+        """
+        # 优先尝试 filled
+        filled = self._get_data_from_batch(batch_data, "filled")
+        if filled is not None:
+            filled_ep = filled[ep_idx]
+            if th.is_tensor(filled_ep):
+                filled_ep = filled_ep.cpu().numpy()
+            step_mask = np.array(filled_ep).reshape(-1)
+            step_count = int(np.sum(step_mask))
+            if step_count > 0:
+                return step_count
+
+        # 其次尝试 terminated 的首次为 1 的位置
+        terminated = self._get_data_from_batch(batch_data, "terminated")
+        if terminated is not None:
+            term_ep = terminated[ep_idx]
+            if th.is_tensor(term_ep):
+                term_ep = term_ep.cpu().numpy()
+            term_flat = np.array(term_ep).reshape(-1)
+            done_indices = np.where(term_flat > 0)[0]
+            if done_indices.size > 0:
+                return int(done_indices[0] + 1)
+
+        # 无法判断时返回 None, 由调用方回退
+        return None
+
     def save_transition_batch(self, batch_data):
         """
         写入数据到 HDF5 文件
@@ -75,14 +126,9 @@ class TransitionStorage:
             # 确定 batch_size（episode 数）
             batch_size = None
             for key in self.scheme.keys():
-                if (
-                    hasattr(batch_data.data, "transition_data")
-                    and key in batch_data.data.transition_data
-                ):
-                    batch_size = batch_data[key].shape[0]
-                    break
-                elif isinstance(batch_data, dict) and key in batch_data:
-                    batch_size = batch_data[key].shape[0]
+                data = self._get_data_from_batch(batch_data, key)
+                if data is not None:
+                    batch_size = data.shape[0]
                     break
 
             if batch_size is None:
@@ -107,17 +153,15 @@ class TransitionStorage:
                 else:
                     ep_group = f[group_name]
 
+                # 计算该 episode 的实际步数（优先使用 filled / terminated）
+                episode_step_count = self._infer_episode_steps(batch_data, ep_idx)
+                fallback_seq_len = None
+
                 # 为当前 episode 存储所有字段
                 for key, info in self.scheme.items():
                     # 获取数据
-                    if (
-                        hasattr(batch_data.data, "transition_data")
-                        and key in batch_data.data.transition_data
-                    ):
-                        data = batch_data[key]
-                    elif isinstance(batch_data, dict) and key in batch_data:
-                        data = batch_data[key]
-                    else:
+                    data = self._get_data_from_batch(batch_data, key)
+                    if data is None:
                         continue
 
                     if th.is_tensor(data):
@@ -125,6 +169,8 @@ class TransitionStorage:
 
                     # 提取当前 episode 的数据
                     episode_data = data[ep_idx]  # shape: (seq_len, ...)
+                    if fallback_seq_len is None:
+                        fallback_seq_len = episode_data.shape[0]
                     
                     # 确定 dataset 的形状和类型
                     vshape = info["vshape"]
@@ -150,6 +196,13 @@ class TransitionStorage:
                         # 如果 dataset 已存在，直接写入
                         ep_group[key][:] = episode_data
                 
+                # 若无法从 filled/terminated 推断步数，则回退为序列长度
+                if episode_step_count is None:
+                    episode_step_count = fallback_seq_len or (self.episode_limit + 1)
+                # 记录步数
+                if "step_counts" in f:
+                    f["step_counts"][episode_idx] = int(episode_step_count)
+
                 actual_saved += 1
 
             # 更新指针
@@ -180,7 +233,7 @@ class TransitionStorage:
                 raise ValueError("No episode stored in the buffer.")
 
             random_indices = np.random.choice(
-                total_episodes, size=batch_size, replace=True
+                total_episodes, size=batch_size, replace=False
             )
 
             batch_data = {}
@@ -320,7 +373,7 @@ def _combine_dataframes(batch_data_dict):
 
 
 if __name__ == "__main__":
-    file_path = "results/collected_transitions/new.h5"
+    file_path = "results/collected_transitions/410M.h5"
     batch_size = 32
 
     with h5py.File(file_path, "r") as f:
@@ -332,6 +385,24 @@ if __name__ == "__main__":
 
         # 获取元数据
         metadata = json.loads(f.attrs["metadata"])
+
+        """
+        新增：统计已存储的总 step 数
+        - 优先使用 step_counts 数据集（每个 episode 的有效步数）
+        - 忽略填充值 -1
+        """
+        total_episodes = int(metadata.get("total_episodes", 0))
+        if "step_counts" in f and total_episodes > 0:
+            step_counts = np.array(f["step_counts"][:total_episodes], dtype=np.int64)
+            valid_step_counts = step_counts[step_counts >= 0]
+            total_steps = int(valid_step_counts.sum())
+            print(
+                f"\n已存储 episodes: {total_episodes}, "
+                f"有效 episodes: {len(valid_step_counts)}, "
+                f"总 step 数: {total_steps}"
+            )
+        else:
+            print("\n未找到 step_counts 或 total_episodes=0，无法统计总 step 数")
         
         """
         查看各数据集的形状

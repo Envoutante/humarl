@@ -177,7 +177,7 @@ def run_sequential(args, logger):
         reward_last_log_T = 0
         reward_model_save_time = 0
 
-        while reward_t_env <= 4 * args.reward_train:
+        while reward_t_env <= args.reward_t_max:
             reward_t_env = learner.train_reward_network(
                 None, reward_t_env, reward_episode
             )
