@@ -1,0 +1,33 @@
+{
+  // 使用 IntelliSense 了解相关属性。 
+  // 悬停以查看现有属性的描述。
+  // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "TEST train reward",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/main.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "args": [
+          "--tag=test",
+          "--config=qmix",
+          "--env-config=sc2",
+          "with",
+          "env_args.map_name=MMM2",
+          "batch_size=6",
+          "use_tensorboard=False",
+          "t_max=1000",
+          "reward_t_max=100",
+          "two_stage_train=True",
+          "reward_mixer=True",
+          "loss_weight=1.0",
+          "save_reward_model=True",
+          "use_transitions=True",
+          "transitions_filename=210M"
+      ]
+    }
+  ]
+}
