@@ -1,5 +1,6 @@
 import copy
 import os
+import numpy as np
 from components.episode_buffer import EpisodeBatch
 from modules.mixers.vdn import VDNMixer
 from modules.mixers.qmix import QMixer
@@ -77,8 +78,8 @@ class QLearner:
             )
             if not os.path.exists(self.individual_rewards_log_path):
                 with open(self.individual_rewards_log_path, "w", encoding="utf-8") as f:
-                    header_cells = ["episode_idx", "total_reward"] + [
-                        f"step_{i}" for i in range(self.args.episode_limit)
+                    header_cells = ["episode_idx", "total_reward", "total_pred_reward"] + [
+                        f"step_{i}" for i in range(self.args.env_info["episode_limit"])
                     ]
                     f.write(", ".join(header_cells) + "\n")
 
@@ -100,6 +101,7 @@ class QLearner:
     """
     训练 reward 网络
     """
+
     def train_reward_network(self, batch: EpisodeBatch, t_env: int, episode_num: int):
         if not self.args.reward_mixer:
             return None, None
@@ -157,6 +159,7 @@ class QLearner:
     """
     训练 Q 网络
     """
+
     def train_q_network(self, batch: EpisodeBatch, t_env: int, episode_num: int):
         # 从 batch 中取出相关数据
         rewards = batch["reward"][:, :-1]
@@ -243,7 +246,14 @@ class QLearner:
             )
 
             # 记录 rewards 和 individual_rewards
-            self._log_reward(rewards, individual_rewards, t_env, episode_num)
+            self._log_reward(
+                rewards,
+                individual_rewards,
+                global_reward_pred,
+                mask,
+                t_env,
+                episode_num,
+            )
 
             # 计算 TD-error
             td_error = chosen_action_qvals - targets.detach()
@@ -335,11 +345,19 @@ class QLearner:
             )
             self.log_stats_t = t_env
 
-    def _log_reward(self, rewards, individual_rewards, t_env: int, episode_num: int):
+    def _log_reward(
+        self,
+        rewards,
+        individual_rewards,
+        global_reward_pred,
+        mask,
+        t_env: int,
+        episode_num: int,
+    ):
         """
         * @author hyr
         * @modified 2025-11-25-17:40
-        * @description 记录 rewards 和 individual_rewards
+        * @description 记录 rewards, global_reward_pred 和 individual_rewards
         """
         if self.individual_rewards_log_path is None:
             return
@@ -352,21 +370,51 @@ class QLearner:
             batch_size, seq_len, _ = individual_rewards.shape
             for episode in range(batch_size):
                 step_cells = []
-                # 计算当前 episode 在所有时间步上的 reward 之和
-                episode_total_reward = rewards[episode, :seq_len].sum().item()
+                # 计算当前 episode 在所有有效时间步上的 reward 之和
+                mask_ep = mask[episode, :seq_len]
+                if th.is_tensor(mask_ep):
+                    mask_ep_np = mask_ep.cpu().numpy()
+                else:
+                    mask_ep_np = np.array(mask_ep)
+                # squeeze 奖励到标量，按 mask 过滤
+                episode_reward_ep = rewards[episode, :seq_len]
+                if th.is_tensor(episode_reward_ep):
+                    episode_reward_ep = episode_reward_ep.cpu().numpy()
+                # 确保 rewards 是 1D 数组，如果形状是 (seq_len, 1) 则 squeeze
+                episode_reward_ep = episode_reward_ep.squeeze()
+                # 计算预测的总奖励
+                episode_pred_reward_ep = global_reward_pred[episode, :seq_len]
+                if th.is_tensor(episode_pred_reward_ep):
+                    episode_pred_reward_ep = episode_pred_reward_ep.cpu().numpy()
+                # 确保预测奖励是 1D 数组
+                episode_pred_reward_ep = episode_pred_reward_ep.squeeze()
+                # 确保 mask 也是 1D 数组
+                mask_ep_np = mask_ep_np.squeeze()
+                # 只对有效的时间步求和（mask > 0）
+                episode_total_reward = float(np.sum(episode_reward_ep * mask_ep_np))
+                episode_total_pred_reward = float(np.sum(episode_pred_reward_ep * mask_ep_np))
                 for t_idx in range(seq_len):
+                    # 若该时间步被 mask（填充），则不写入内容
+                    if mask_ep_np[t_idx] <= 0:
+                        step_cells.append("")
+                        continue
                     total_reward = rewards[episode, t_idx].item()
+                    pred_reward = global_reward_pred[episode, t_idx].item()
                     # 修改：使用分号 ; 代替逗号，避免破坏 CSV 列结构
                     # 或者去掉 .tolist() 手动拼接，控制分隔符
                     step_rewards_str = ";".join(
                         map(str, individual_rewards[episode, t_idx].tolist())
                     )
-                    cell = f"{total_reward}=[{step_rewards_str}]"
+                    # 格式：真实的总 reward - 预测的总 reward = [子 reward; 子 reward; ...]
+                    cell = f"{total_reward}&{pred_reward}=[{step_rewards_str}]"
                     step_cells.append(cell)
 
-                episode_idx = episode_num + episode
-                # 在第一个时间步 reward 前增加一列：当前 episode 的所有 reward 之和
-                row = ", ".join([str(episode_idx), str(episode_total_reward)] + step_cells)
+                # episode_num 已经包含当前 batch 的 episode，需要减去 batch_size 来计算正确的索引
+                episode_idx = episode_num - batch_size + episode
+                # 在第一个时间步 reward 前增加两列：当前 episode 的真实总 reward 和预测总 reward
+                row = ", ".join(
+                    [str(episode_idx), str(episode_total_reward), str(episode_total_pred_reward)] + step_cells
+                )
                 with open(self.individual_rewards_log_path, "a", encoding="utf-8") as f:
                     f.write(row + "\n")
 
