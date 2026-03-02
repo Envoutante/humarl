@@ -78,7 +78,11 @@ class QLearner:
             )
             if not os.path.exists(self.individual_rewards_log_path):
                 with open(self.individual_rewards_log_path, "w", encoding="utf-8") as f:
-                    header_cells = ["episode_idx", "total_reward", "total_pred_reward"] + [
+                    header_cells = [
+                        "episode_idx",
+                        "total_reward",
+                        "total_pred_reward",
+                    ] + [
                         f"step_{i}" for i in range(self.args.env_info["episode_limit"])
                     ]
                     f.write(", ".join(header_cells) + "\n")
@@ -392,7 +396,9 @@ class QLearner:
                 mask_ep_np = mask_ep_np.squeeze()
                 # 只对有效的时间步求和（mask > 0）
                 episode_total_reward = float(np.sum(episode_reward_ep * mask_ep_np))
-                episode_total_pred_reward = float(np.sum(episode_pred_reward_ep * mask_ep_np))
+                episode_total_pred_reward = float(
+                    np.sum(episode_pred_reward_ep * mask_ep_np)
+                )
                 for t_idx in range(seq_len):
                     # 若该时间步被 mask（填充），则不写入内容
                     if mask_ep_np[t_idx] <= 0:
@@ -410,10 +416,15 @@ class QLearner:
                     step_cells.append(cell)
 
                 # episode_num 已经包含当前 batch 的 episode，需要减去 batch_size 来计算正确的索引
-                episode_idx = episode_num - batch_size + episode
+                episode_idx = (episode_num - batch_size + 1) + episode
                 # 在第一个时间步 reward 前增加两列：当前 episode 的真实总 reward 和预测总 reward
                 row = ", ".join(
-                    [str(episode_idx), str(episode_total_reward), str(episode_total_pred_reward)] + step_cells
+                    [
+                        str(episode_idx),
+                        str(episode_total_reward),
+                        str(episode_total_pred_reward),
+                    ]
+                    + step_cells
                 )
                 with open(self.individual_rewards_log_path, "a", encoding="utf-8") as f:
                     f.write(row + "\n")

@@ -19,7 +19,8 @@ class RewardMixer(nn.Module):
             nn.ReLU(),
             nn.Linear(64, 32),
             nn.ReLU(),
-            nn.Linear(32, 1, bias=False)
+            nn.Linear(32, 1),
+            nn.ReLU(),
         )
 
         # 全局 reward 聚合网络的超网络 - 基于全局 state 生成权重和偏置
@@ -57,51 +58,82 @@ class RewardMixer(nn.Module):
         actions_onehot = ep_batch["actions_onehot"][:, :-1]
         state = ep_batch["state"][:, :-1]
 
-        batch_size, seq_len, n_agents, _ = actions_onehot.shape  # actions_onehot: [batch_size, seq_len, n_agents, action_dim]
+        batch_size, seq_len, n_agents, _ = (
+            actions_onehot.shape
+        )  # actions_onehot: [batch_size, seq_len, n_agents, action_dim]
 
         # 计算个体reward（共享参数的网络）
         # QPLEX
-        state_flat = state.reshape(-1, self.state_dim)  # [batch_size * seq_len, state_dim]
-        unit_flat = state_flat[:, : self.unit_dim * self.n_agents]  # [batch_size * seq_len, unit_dim * n_agents]
-        unit_flat = unit_flat.reshape(-1, self.n_agents, self.unit_dim)  # [batch_size * seq_len, n_agents, unit_dim]
-        unit_flat = unit_flat.reshape(-1, self.unit_dim)  # [batch_size * seq_len * n_agents, unit_dim]
+        state_flat = state.reshape(
+            -1, self.state_dim
+        )  # [batch_size * seq_len, state_dim]
+        unit_flat = state_flat[
+            :, : self.unit_dim * self.n_agents
+        ]  # [batch_size * seq_len, unit_dim * n_agents]
+        unit_flat = unit_flat.reshape(
+            -1, self.n_agents, self.unit_dim
+        )  # [batch_size * seq_len, n_agents, unit_dim]
+        unit_flat = unit_flat.reshape(
+            -1, self.unit_dim
+        )  # [batch_size * seq_len * n_agents, unit_dim]
 
         # 展平 state、action
         # 将全局 state 广播到每个 agent
-        state_expanded = state.unsqueeze(2).expand(batch_size, seq_len, n_agents, self.state_dim)  # [batch_size, seq_len, n_agents, state_dim]
-        state_flat = state_expanded.reshape(-1, self.state_dim)  # [batch_size * seq_len * n_agents, state_dim]
-        actions_flat = actions_onehot.reshape(-1, self.action_dim)  # [batch_size * seq_len * n_agents, action_dim]
+        state_expanded = state.unsqueeze(2).expand(
+            batch_size, seq_len, n_agents, self.state_dim
+        )  # [batch_size, seq_len, n_agents, state_dim]
+        state_flat = state_expanded.reshape(
+            -1, self.state_dim
+        )  # [batch_size * seq_len * n_agents, state_dim]
+        actions_flat = actions_onehot.reshape(
+            -1, self.action_dim
+        )  # [batch_size * seq_len * n_agents, action_dim]
 
         # 拼接 state、action、unit_state
-        agent_inputs = torch.cat([state_flat, actions_flat, unit_flat], dim=-1)  # [batch_size * seq_len * n_agents, state_dim + action_dim + unit_dim]
+        agent_inputs = torch.cat(
+            [state_flat, actions_flat, unit_flat], dim=-1
+        )  # [batch_size * seq_len * n_agents, state_dim + action_dim + unit_dim]
 
-        individual_rewards_flat = torch.abs(self.individual_reward_net(agent_inputs))  # [batch_size * seq_len * n_agents, 1]
-        individual_rewards = individual_rewards_flat.view(batch_size, seq_len, n_agents, 1)  # [batch_size, seq_len, n_agents, 1]
+        individual_rewards_flat = self.individual_reward_net(
+            agent_inputs
+        )  # [batch_size * seq_len * n_agents, 1]
+        individual_rewards = individual_rewards_flat.view(
+            batch_size, seq_len, n_agents, 1
+        )  # [batch_size, seq_len, n_agents, 1]
 
         # 使用超网络聚合全局 reward
-        global_reward_pred = self._aggregate_global_reward(individual_rewards, state)  # [batch_size, seq_len, 1]
+        global_reward_pred = self._aggregate_global_reward(
+            individual_rewards, state
+        )  # [batch_size, seq_len, 1]
 
         return individual_rewards, global_reward_pred
 
+    # def _aggregate_global_reward(self, individual_rewards, state):
+    #     batch_size, seq_len, _, _ = individual_rewards.shape
+    #     total_batches = batch_size * seq_len
+
+    #     individual_rewards = individual_rewards.reshape(total_batches, 1, self.n_agents)
+    #     states = state.reshape(total_batches, self.state_dim)
+
+    #     w1 = torch.abs(self.hyper_w_1(states))
+    #     b1 = self.hyper_b_1(states)
+    #     w1 = w1.view(-1, self.n_agents, self.embed_dim)
+    #     b1 = b1.view(-1, 1, self.embed_dim)
+
+    #     hidden = F.elu(torch.bmm(individual_rewards, w1) + b1)
+
+    #     w_final = torch.abs(self.hyper_w_final(states))
+    #     w_final = w_final.view(-1, self.embed_dim, 1)
+    #     v = self.V(states).view(-1, 1, 1)
+
+    #     y = torch.bmm(hidden, w_final) + v
+    #     global_reward_pred = y.view(batch_size, seq_len, 1)
+
+    #     return global_reward_pred
+
     def _aggregate_global_reward(self, individual_rewards, state):
-        batch_size, seq_len, _, _ = individual_rewards.shape
-        total_batches = batch_size * seq_len
-
-        individual_rewards = individual_rewards.reshape(total_batches, 1, self.n_agents)
-        states = state.reshape(total_batches, self.state_dim)
-
-        w1 = torch.abs(self.hyper_w_1(states))
-        b1 = self.hyper_b_1(states)
-        w1 = w1.view(-1, self.n_agents, self.embed_dim)
-        b1 = b1.view(-1, 1, self.embed_dim)
-
-        hidden = F.elu(torch.bmm(individual_rewards, w1) + b1)
-
-        w_final = torch.abs(self.hyper_w_final(states))
-        w_final = w_final.view(-1, self.embed_dim, 1)
-        v = self.V(states).view(-1, 1, 1)
-
-        y = torch.bmm(hidden, w_final) + v
-        global_reward_pred = y.view(batch_size, seq_len, 1)
-
+        # individual_rewards: [batch_size, seq_len, n_agents, 1]
+        # 在 n_agents 维度上求和，得到全局 reward
+        global_reward_pred = individual_rewards.sum(dim=2)  # [batch_size, seq_len, 1]
+        
         return global_reward_pred

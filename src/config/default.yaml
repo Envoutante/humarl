@@ -24,7 +24,7 @@ reward_weight: 0.0 # 全局 reward 的权重
 loss_weight: 0.5
 reward_t_max: 1000000 # 训练 reward 网络多少步
 reward_batch_size: 32 # reward 网络训练的 batch size
-reward_save_interval: 1000000 # 记录预测的个体 reward 的间隔
+reward_save_interval: 500000 # 记录预测的个体 reward 的间隔
 reward_checkpoint_path: "" # 预训练 reward 网络路径
 
 # --- Transition options ---

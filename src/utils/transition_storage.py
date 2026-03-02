@@ -140,12 +140,12 @@ class TransitionStorage:
             # 为每个 episode 创建 group 并存储所有字段
             for ep_idx in range(batch_size):
                 episode_idx = start_idx + ep_idx
-                
+
                 # 检查是否超出最大容量
                 if episode_idx >= self.max_size:
                     self.is_full = True
                     break
-                
+
                 # 创建或获取 episode group
                 group_name = f"episode_{episode_idx}"
                 if group_name not in f:
@@ -171,11 +171,11 @@ class TransitionStorage:
                     episode_data = data[ep_idx]  # shape: (seq_len, ...)
                     if fallback_seq_len is None:
                         fallback_seq_len = episode_data.shape[0]
-                    
+
                     # 确定 dataset 的形状和类型
                     vshape = info["vshape"]
                     dtype = info.get("dtype", np.float32)
-                    
+
                     if "group" in info:
                         group_size = self.groups[info["group"]]
                         dataset_shape = (self.episode_limit + 1, group_size, *vshape)
@@ -195,7 +195,7 @@ class TransitionStorage:
                     else:
                         # 如果 dataset 已存在，直接写入
                         ep_group[key][:] = episode_data
-                
+
                 # 若无法从 filled/terminated 推断步数，则回退为序列长度
                 if episode_step_count is None:
                     episode_step_count = fallback_seq_len or (self.episode_limit + 1)
@@ -233,7 +233,7 @@ class TransitionStorage:
                 raise ValueError("No episode stored in the buffer.")
 
             random_indices = np.random.choice(
-                total_episodes, size=batch_size, replace=False
+                total_episodes, size=batch_size, replace=True
             )
 
             batch_data = {}
@@ -403,7 +403,7 @@ if __name__ == "__main__":
             )
         else:
             print("\n未找到 step_counts 或 total_episodes=0，无法统计总 step 数")
-        
+
         """
         查看各数据集的形状
         """
@@ -429,10 +429,10 @@ if __name__ == "__main__":
         # 只收集 reward、terminated、filled 这三个字段
         target_fields = ["reward", "terminated", "filled"]
         batch_data_dict = {}
-        
+
         # 记录采样耗时
         sample_start_time = time.time()
-        
+
         # 从 episode groups 读取
         for key in target_fields:
             episode_list = []
@@ -448,7 +448,7 @@ if __name__ == "__main__":
                 batch_data = np.array(episode_list)
                 batch_data_dict[key] = batch_data
                 print(f"{key}: shape={batch_data.shape}")
-        
+
         sample_end_time = time.time()
         sample_duration = sample_end_time - sample_start_time
         print(f"\n采样 {batch_size} 个 episode 耗时: {sample_duration:.4f} 秒")
