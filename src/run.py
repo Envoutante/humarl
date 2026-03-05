@@ -33,10 +33,10 @@ def run(_run, _config, _log):
 
     # 配置日志中的 Tensorboard 相关内容
     unique_token = "{}__{}__{}__{}".format(
+        datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
         args.tag,
         args.env_args["map_name"],
         args.name,
-        datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
     )
     args.unique_token = unique_token
     if args.use_tensorboard:

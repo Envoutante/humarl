@@ -74,7 +74,7 @@ class QLearner:
             os.makedirs(logs_dir, exist_ok=True)
             unique_token = getattr(self.args, "unique_token", "default")
             self.individual_rewards_log_path = os.path.join(
-                logs_dir, f"individual_rewards_{unique_token}.csv"
+                logs_dir, f"{unique_token}.csv"
             )
             if not os.path.exists(self.individual_rewards_log_path):
                 with open(self.individual_rewards_log_path, "w", encoding="utf-8") as f:

@@ -41,7 +41,7 @@ class EpisodeRunner:
             os.makedirs(episode_return_log_dir, exist_ok=True)
             unique_token = getattr(self.args, "unique_token", "default")
             self.episode_return_log_path = os.path.join(
-                episode_return_log_dir, f"episode_returns_{unique_token}.csv"
+                episode_return_log_dir, f"{unique_token}.csv"
             )
             if not os.path.exists(self.episode_return_log_path):
                 with open(self.episode_return_log_path, "w", encoding="utf-8") as f:
@@ -54,15 +54,24 @@ class EpisodeRunner:
         """
         self.args.env_info = self.get_env_info()
         if self.args.collect_transitions:
-            storage_dir = os.path.join(os.path.abspath(self.args.local_results_path), "collected_transitions")
+            storage_dir = os.path.join(
+                os.path.abspath(self.args.local_results_path), "collected_transitions"
+            )
             os.makedirs(storage_dir, exist_ok=True)
             unique_token = self.args.unique_token
             file_path = os.path.join(storage_dir, f"transitions_{unique_token}.h5")
             self.transition_storage = TransitionStorage(self.args, file_path)
 
     def setup(self, scheme, groups, preprocess, mac):
-        self.new_batch = partial(EpisodeBatch, scheme, groups, self.batch_size, self.episode_limit + 1,
-                                 preprocess=preprocess, device=self.args.device)
+        self.new_batch = partial(
+            EpisodeBatch,
+            scheme,
+            groups,
+            self.batch_size,
+            self.episode_limit + 1,
+            preprocess=preprocess,
+            device=self.args.device,
+        )
         self.mac = mac
 
     def get_env_info(self):
@@ -93,12 +102,14 @@ class EpisodeRunner:
             pre_transition_data = {
                 "state": [self.env.get_state()],
                 "avail_actions": [self.env.get_avail_actions()],
-                "obs": [self.env.get_obs()]
+                "obs": [self.env.get_obs()],
             }
             self.batch.update(pre_transition_data, ts=self.t)
 
             # mac 根据 self.batch 选择动作
-            actions = self.mac.select_actions(self.batch, t_ep=self.t, t_env=self.t_env, test_mode=test_mode)
+            actions = self.mac.select_actions(
+                self.batch, t_ep=self.t, t_env=self.t_env, test_mode=test_mode
+            )
 
             # 在环境中执行动作
             reward, terminated, env_info = self.env.step(actions[0])
@@ -119,12 +130,14 @@ class EpisodeRunner:
         last_data = {
             "state": [self.env.get_state()],
             "avail_actions": [self.env.get_avail_actions()],
-            "obs": [self.env.get_obs()]
+            "obs": [self.env.get_obs()],
         }
         self.batch.update(last_data, ts=self.t)
 
         # mac 根据 self.batch 选择动作并存入 self.batch
-        actions = self.mac.select_actions(self.batch, t_ep=self.t, t_env=self.t_env, test_mode=test_mode)
+        actions = self.mac.select_actions(
+            self.batch, t_ep=self.t, t_env=self.t_env, test_mode=test_mode
+        )
         self.batch.update({"actions": actions}, ts=self.t)
 
         # 更新总时间步 self.t_env
@@ -135,7 +148,12 @@ class EpisodeRunner:
         cur_stats = self.test_stats if test_mode else self.train_stats
         cur_returns = self.test_returns if test_mode else self.train_returns
         log_prefix = "test_" if test_mode else ""
-        cur_stats.update({k: cur_stats.get(k, 0) + env_info.get(k, 0) for k in set(cur_stats) | set(env_info)})
+        cur_stats.update(
+            {
+                k: cur_stats.get(k, 0) + env_info.get(k, 0)
+                for k in set(cur_stats) | set(env_info)
+            }
+        )
         cur_stats["n_episodes"] = 1 + cur_stats.get("n_episodes", 0)
         cur_stats["ep_length"] = self.t + cur_stats.get("ep_length", 0)
         cur_returns.append(episode_return)
@@ -145,7 +163,11 @@ class EpisodeRunner:
          * @modified 2026-01-05-15:49
          * @description 记录每个 episode 的 reward 之和到 CSV 文件（仅在 test_mode 且需要记录时）
         """
-        if test_mode and self.args.log_episode_return and self.episode_return_log_path is not None:
+        if (
+            test_mode
+            and self.args.log_episode_return
+            and self.episode_return_log_path is not None
+        ):
             episode_idx = len(cur_returns) - 1  # 当前 episode 的序号（从0开始）
             with open(self.episode_return_log_path, "a", encoding="utf-8") as f:
                 f.write(f"{episode_idx}, {episode_return}\n")
@@ -155,7 +177,11 @@ class EpisodeRunner:
          * @modified 2026-01-05-15:49
          * @description 保存训练时的 transitions 用于离线强化学习
         """
-        if not test_mode and self.args.collect_transitions and self.transition_storage is not None:
+        if (
+            not test_mode
+            and self.args.collect_transitions
+            and self.transition_storage is not None
+        ):
             self.transition_storage.save_transition_batch(self.batch)
 
         # 记录日志
@@ -164,7 +190,9 @@ class EpisodeRunner:
         elif self.t_env - self.log_train_stats_t >= self.args.runner_log_interval:
             self._log(cur_returns, cur_stats, log_prefix)
             if hasattr(self.mac.action_selector, "epsilon"):
-                self.logger.log_stat("epsilon", self.mac.action_selector.epsilon, self.t_env)
+                self.logger.log_stat(
+                    "epsilon", self.mac.action_selector.epsilon, self.t_env
+                )
             self.log_train_stats_t = self.t_env
 
         return self.batch
@@ -176,5 +204,7 @@ class EpisodeRunner:
 
         for k, v in stats.items():
             if k != "n_episodes":
-                self.logger.log_stat(prefix + k + "_mean" , v/stats["n_episodes"], self.t_env)
+                self.logger.log_stat(
+                    prefix + k + "_mean", v / stats["n_episodes"], self.t_env
+                )
         stats.clear()

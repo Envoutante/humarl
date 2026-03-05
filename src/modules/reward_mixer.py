@@ -131,9 +131,9 @@ class RewardMixer(nn.Module):
 
     #     return global_reward_pred
 
-    def _aggregate_global_reward(self, individual_rewards, state):
+    def _aggregate_global_reward(self, individual_rewards):
         # individual_rewards: [batch_size, seq_len, n_agents, 1]
         # 在 n_agents 维度上求和，得到全局 reward
         global_reward_pred = individual_rewards.sum(dim=2)  # [batch_size, seq_len, 1]
-        
+
         return global_reward_pred
