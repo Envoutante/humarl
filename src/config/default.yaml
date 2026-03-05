@@ -18,6 +18,7 @@ buffer_cpu_only: True # If true we won't keep all of the replay buffer in vram
 
 # --- Reward options ---
 log_episode_return: False # 是否记录每个 episode 的 reward 之和
+log_individual_reward: False # 是否记录每个 episode 的 reward 之和以及每个时间步的子 reward
 save_reward_model: False # 是否保存 reward 网络模型
 reward_mixer: False # 是否使用个体 reward
 reward_weight: 0.0 # 全局 reward 的权重

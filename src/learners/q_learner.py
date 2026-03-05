@@ -67,7 +67,7 @@ class QLearner:
          * @description 记录 individual_rewards
         """
         self.individual_rewards_log_path = None
-        if self.args.reward_mixer:
+        if self.args.reward_mixer and self.args.log_individual_reward:
             logs_dir = os.path.join(
                 os.path.abspath(self.args.local_results_path), "individual_reward_logs"
             )
