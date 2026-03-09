@@ -171,6 +171,22 @@ def run_sequential(args, logger):
 
     logger.console_logger.info("Beginning training for {} timesteps".format(args.t_max))
 
+    q_tot_stage_steps = getattr(args, "q_tot_stage_steps", args.t_max)
+    reward_stage_steps = getattr(args, "reward_stage_steps", 0)
+    q_i_stage_steps = getattr(args, "q_i_stage_steps", 0)
+    stage1_end_t = q_tot_stage_steps
+    stage2_end_t = q_tot_stage_steps + reward_stage_steps
+    stage3_end_t = q_tot_stage_steps + reward_stage_steps + q_i_stage_steps
+    if args.reward_mixer:
+        logger.console_logger.info(
+            "Three-stage budgets (env timesteps): Q_tot={}, Reward={}, Q_i={}, total={}".format(
+                q_tot_stage_steps,
+                reward_stage_steps,
+                q_i_stage_steps,
+                stage3_end_t,
+            )
+        )
+
     """
     新增
     训练 reward 网络
@@ -238,11 +254,36 @@ def run_sequential(args, logger):
             修改
             learner 基于算法设计更新模型参数
             """
-            if not args.two_stage_train and args.reward_mixer:
-                learner.train_reward_network(episode_sample, runner.t_env, episode)
-                learner.train_q_network(episode_sample, runner.t_env, episode)
+            if args.reward_mixer:
+                # 每个环境时间步仅执行一个训练阶段，阶段由 runner.t_env 所在区间决定。
+                if runner.t_env < stage1_end_t:
+                    # Stage-1: 用 r_tot 训练 Q_tot
+                    learner.train_q_network(
+                        episode_sample,
+                        runner.t_env,
+                        episode,
+                        reward_mode="tot",
+                    )
+
+                elif runner.t_env < stage2_end_t:
+                    # Stage-2: 训练 reward 网络
+                    learner.train_reward_network(episode_sample, runner.t_env, episode)
+
+                elif runner.t_env < stage3_end_t:
+                    # Stage-3: 用 reward 网络预测的 r_i 训练 Q_i
+                    learner.train_q_network(
+                        episode_sample,
+                        runner.t_env,
+                        episode,
+                        reward_mode="individual",
+                    )
             else:
-                learner.train_q_network(episode_sample, runner.t_env, episode)
+                learner.train_q_network(
+                    episode_sample,
+                    runner.t_env,
+                    episode,
+                    reward_mode="tot",
+                )
 
         # 测试模型
         n_test_runs = max(1, args.test_nepisode // runner.batch_size)

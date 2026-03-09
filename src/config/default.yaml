@@ -21,12 +21,16 @@ log_episode_return: False # 是否记录每个 episode 的 reward 之和
 log_individual_reward: False # 是否记录每个 episode 的 reward 之和以及每个时间步的子 reward
 save_reward_model: False # 是否保存 reward 网络模型
 reward_mixer: False # 是否使用个体 reward
+reward_prediction_mode: "residual" # reward 网络形式: "residual"(预测残差) 或 "direct"(直接预测 r_i)
 reward_weight: 0.0 # 全局 reward 的权重
 loss_weight: 0.5
 reward_t_max: 1000000 # 训练 reward 网络多少步
 reward_batch_size: 32 # reward 网络训练的 batch size
 reward_save_interval: 500000 # 记录预测的个体 reward 的间隔
 reward_checkpoint_path: "" # 预训练 reward 网络路径
+q_tot_stage_steps: 1000000 # Stage-1 预算: 用 r_tot 训练 Q_tot 的环境时间步数
+reward_stage_steps: 600000 # Stage-2 预算: 训练 reward 网络的环境时间步数
+q_i_stage_steps: 1000000 # Stage-3 预算: 用预测 r_i 训练 Q_i 的环境时间步数
 
 # --- Transition options ---
 two_stage_train: False

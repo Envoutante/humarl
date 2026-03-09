@@ -44,22 +44,23 @@ class QLearner:
         """
         新增 reward_mixer
         """
-        self.reward_mixer = RewardMixer(args)
-        self.reward_optimizer = RMSprop(
-            params=self.reward_mixer.parameters(),
-            lr=args.lr,
-            alpha=args.optim_alpha,
-            eps=args.optim_eps,
-        )
-        """
-        新增 target_reward_mixer
-        """
-        self.target_reward_mixer = copy.deepcopy(self.reward_mixer)
-        """
-        新增
-        """
+        self.reward_mixer = None
+        self.reward_optimizer = None
+        self.target_reward_mixer = None
         self.reward_log_t = -self.args.learner_log_interval - 1
         self.reward_save_t = 0
+        if self.args.reward_mixer:
+            self.reward_mixer = RewardMixer(args, self.mac.agent)
+            self.reward_optimizer = RMSprop(
+                params=self.reward_mixer.parameters(),
+                lr=args.lr,
+                alpha=args.optim_alpha,
+                eps=args.optim_eps,
+            )
+            """
+            新增 target_reward_mixer
+            """
+            self.target_reward_mixer = copy.deepcopy(self.reward_mixer)
 
         """
          * @author hyr
@@ -164,7 +165,13 @@ class QLearner:
     训练 Q 网络
     """
 
-    def train_q_network(self, batch: EpisodeBatch, t_env: int, episode_num: int):
+    def train_q_network(
+        self,
+        batch: EpisodeBatch,
+        t_env: int,
+        episode_num: int,
+        reward_mode: str = "tot",
+    ):
         # 从 batch 中取出相关数据
         rewards = batch["reward"][:, :-1]
         actions = batch["actions"][:, :-1]
@@ -213,43 +220,42 @@ class QLearner:
                 0
             ]  # [batch_size, seq_len-1, n_agents]
 
-        """
-         * @author hyr
-         * @modified 2025-11-26-15:55
-         * @description 新增的优化目标
-        """
-        if self.args.reward_mixer:
-            # 计算个体 reward
+        testing_reward_loss = None
+        stage_name = "q_tot"
+
+        if reward_mode == "tot":
+            # Stage-1: 使用采样得到的 r_tot 训练 Q_tot。
+            if self.mixer is not None:
+                chosen_action_qvals = self.mixer(
+                    chosen_action_qvals, batch["state"][:, :-1]
+                )
+                target_max_qvals = self.target_mixer(
+                    target_max_qvals, batch["state"][:, 1:]
+                )
+            targets = rewards + self.args.gamma * (1 - terminated) * target_max_qvals
+
+        elif reward_mode == "individual":
+            # Stage-3: 使用 reward 网络预测的 r_i 训练 Q_i。
+            if not self.args.reward_mixer:
+                return
+
+            stage_name = "q_i"
             with th.no_grad():
                 individual_rewards, global_reward_pred = self.reward_mixer(batch)
 
-            """
-             * @author hyr
-             * @modified 2026-01-04-10:19
-             * @description 记录奖励网络在测试阶段中的损失
-            """
             true_global_rewards = batch["reward"][:, :-1]
             reward_error = global_reward_pred - true_global_rewards
             reward_mask = mask.expand_as(reward_error)
             masked_reward_error = reward_error * reward_mask
             testing_reward_loss = (masked_reward_error**2).sum() / reward_mask.sum()
 
-            # 对个体 reward 进行掩码
             masked_individual_rewards = individual_rewards.squeeze(-1) * mask
-            individual_rewards = (
-                masked_individual_rewards.detach()
-            )  # [batch_size, seq_len-1, n_agents]
-
-            # 混合 reward
-            mixd_reward = (
-                self.args.reward_weight * rewards
-                + (1 - self.args.reward_weight) * individual_rewards
-            )
+            individual_rewards = masked_individual_rewards.detach()
             targets = (
-                mixd_reward + self.args.gamma * (1 - terminated) * target_max_qvals
+                individual_rewards
+                + self.args.gamma * (1 - terminated) * target_max_qvals
             )
 
-            # 记录 rewards 和 individual_rewards
             self._log_reward(
                 rewards,
                 individual_rewards,
@@ -258,32 +264,8 @@ class QLearner:
                 t_env,
                 episode_num,
             )
-
-            # 计算 TD-error
-            td_error = chosen_action_qvals - targets.detach()
-
-            q_mask = mask.expand_as(td_error)
-
-            # mask 掉无效的 TD-error
-            masked_td_error = td_error * q_mask
-
-            # 计算 L2 损失 (仅对实际数据取平均)
-            q_loss_2 = (masked_td_error**2).sum() / q_mask.sum()
-
-        """
-         * @author hyr
-         * @modified 2025-11-26-16:12
-         * @description 原始的优化目标
-        """
-        if self.mixer is not None:
-            chosen_action_qvals = self.mixer(
-                chosen_action_qvals, batch["state"][:, :-1]
-            )
-            target_max_qvals = self.target_mixer(
-                target_max_qvals, batch["state"][:, 1:]
-            )
-
-        targets = rewards + self.args.gamma * (1 - terminated) * target_max_qvals
+        else:
+            raise ValueError("Unknown reward_mode: {}".format(reward_mode))
 
         # 计算 TD-error
         td_error = chosen_action_qvals - targets.detach()
@@ -294,20 +276,7 @@ class QLearner:
         masked_td_error = td_error * q_mask
 
         # 计算 L2 损失 (仅对实际数据取平均)
-        q_loss_1 = (masked_td_error**2).sum() / q_mask.sum()
-
-        """
-         * @author hyr
-         * @modified 2025-11-28-17:55
-         * @description 汇总 loss
-        """
-        if self.args.reward_mixer:
-            q_loss = (
-                self.args.loss_weight * q_loss_1
-                + (1 - self.args.loss_weight) * q_loss_2
-            )
-        else:
-            q_loss = q_loss_1
+        q_loss = (masked_td_error**2).sum() / q_mask.sum()
 
         # 更新参数
         self.optimiser.zero_grad()
@@ -325,16 +294,20 @@ class QLearner:
         # 记录日志
         if t_env - self.log_stats_t >= self.args.learner_log_interval:
             self.logger.log_stat("q_loss", q_loss.item(), t_env)
-            if self.args.reward_mixer:
-                self.logger.log_stat("q_loss_2", q_loss_2.item(), t_env)
+            self.logger.log_stat("{}/loss".format(stage_name), q_loss.item(), t_env)
+            if testing_reward_loss is not None:
                 self.logger.log_stat(
                     "reward_loss/test", testing_reward_loss.item(), t_env
                 )
-            self.logger.log_stat("q_loss_1", q_loss_1.item(), t_env)
             self.logger.log_stat("grad_norm", grad_norm, t_env)
             mask_elems = q_mask.sum().item()
             self.logger.log_stat(
                 "td_error_abs", (masked_td_error.abs().sum().item() / mask_elems), t_env
+            )
+            self.logger.log_stat(
+                "{}/td_error_abs".format(stage_name),
+                (masked_td_error.abs().sum().item() / mask_elems),
+                t_env,
             )
             self.logger.log_stat(
                 "q_taken_mean",
@@ -343,7 +316,18 @@ class QLearner:
                 t_env,
             )
             self.logger.log_stat(
+                "{}/q_taken_mean".format(stage_name),
+                (chosen_action_qvals * q_mask).sum().item()
+                / (mask_elems * self.args.n_agents),
+                t_env,
+            )
+            self.logger.log_stat(
                 "target_mean",
+                (targets * q_mask).sum().item() / (mask_elems * self.args.n_agents),
+                t_env,
+            )
+            self.logger.log_stat(
+                "{}/target_mean".format(stage_name),
                 (targets * q_mask).sum().item() / (mask_elems * self.args.n_agents),
                 t_env,
             )
@@ -435,7 +419,8 @@ class QLearner:
         self.target_mac.load_state(self.mac)
         if self.mixer is not None:
             self.target_mixer.load_state_dict(self.mixer.state_dict())
-        self.target_reward_mixer.load_state_dict(self.reward_mixer.state_dict())
+        if self.args.reward_mixer:
+            self.target_reward_mixer.load_state_dict(self.reward_mixer.state_dict())
         self.logger.console_logger.info("Updated target network")
 
     def cuda(self):
@@ -444,11 +429,12 @@ class QLearner:
         if self.mixer is not None:
             self.mixer.cuda()
             self.target_mixer.cuda()
-        """
-        新增
-        """
-        self.reward_mixer.cuda()
-        self.target_reward_mixer.cuda()
+        if self.args.reward_mixer:
+            """
+            新增
+            """
+            self.reward_mixer.cuda()
+            self.target_reward_mixer.cuda()
 
     def save_models(self, path):
         self.mac.save_models(path)
@@ -504,6 +490,8 @@ class QLearner:
     """
 
     def save_reward_models(self, path):
+        if not self.args.reward_mixer:
+            return
         th.save(self.reward_mixer.state_dict(), "{}/reward_mixer.th".format(path))
         th.save(self.reward_optimizer.state_dict(), "{}/reward_opt.th".format(path))
 
@@ -514,6 +502,8 @@ class QLearner:
     """
 
     def load_reward_models(self, path):
+        if not self.args.reward_mixer:
+            return
         self.reward_mixer.load_state_dict(
             th.load(
                 "{}/reward_mixer.th".format(path),

@@ -28,6 +28,24 @@
           "use_transitions=True",
           "transitions_filename=210M"
       ]
+    },
+    {
+      "name": "ORIG train", // 新配置的名称，可在调试面板中选择
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/main.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "args": [
+          "--tag=orig",
+          "--config=qmix",
+          "--env-config=sc2",
+          "with",
+          "env_args.map_name=MMM2",
+          "batch_size=4",
+          "use_tensorboard=False",
+          "t_max=2600000"
+      ]
     }
   ]
 }
