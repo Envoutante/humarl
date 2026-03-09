@@ -135,6 +135,10 @@ def run_sequential(args, logger):
     # 实例化 learner
     learner = le_REGISTRY[args.learner](mac, buffer.scheme, logger, args)
 
+    # 绑定 runner 和 learner 的 reward_mixer，保证 return_pred 日志使用同一套权重
+    if args.reward_mixer:
+        runner.set_reward_mixer(learner.reward_mixer)
+
     if args.use_cuda:
         learner.cuda()
 

@@ -30,22 +30,9 @@ results_path = os.path.join(dirname(dirname(abspath(__file__))), "results")
 def my_main(_run, _config, _log):
     # Setting the random seed throughout the modules
     config = config_copy(_config)
-
-    """
-     * @author hyr
-     * @modified 2026-03-06-15:03
-     * @description 固定随机数种子, 保证实验可复现
-    """
-    seed = int(config["seed"])
-    random.seed(seed)
-    np.random.seed(seed)
-    th.manual_seed(seed)
-    if th.cuda.is_available():
-        th.cuda.manual_seed_all(seed)
-    # Keep kernels deterministic to reduce run-to-run variance.
-    th.backends.cudnn.deterministic = True
-    th.backends.cudnn.benchmark = False
-    config["env_args"]["seed"] = seed
+    np.random.seed(config["seed"])
+    th.manual_seed(config["seed"])
+    config["env_args"]["seed"] = config["seed"]
 
     # run the framework
     run(_run, config, _log)

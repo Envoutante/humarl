@@ -5,7 +5,6 @@ import os
 import numpy as np
 import torch as th
 from utils.transition_storage import TransitionStorage
-from modules.reward_mixer import RewardMixer
 
 
 class EpisodeRunner:
@@ -87,14 +86,14 @@ class EpisodeRunner:
         self.mac = mac
 
         if self.args.reward_mixer:
-            self.reward_mixer = RewardMixer(self.args)
-            if self.args.use_cuda:
-                self.reward_mixer.cuda()
-            self.reward_predict_enabled = self.load_reward_models(
-                self.args.reward_checkpoint_path
-            )
-            if self.reward_predict_enabled:
-                self.reward_mixer.eval()
+            # Use learner's reward_mixer by reference to keep prediction logging
+            # consistent with the reward network actually used during Q training.
+            self.reward_predict_enabled = False
+
+    def set_reward_mixer(self, reward_mixer):
+        """Bind runner to learner reward mixer so logging uses the same weights."""
+        self.reward_mixer = reward_mixer
+        self.reward_predict_enabled = reward_mixer is not None
 
     def get_env_info(self):
         return self.env.get_env_info()
@@ -162,14 +161,23 @@ class EpisodeRunner:
         )
         self.batch.update({"actions": actions}, ts=self.t)
 
+        """
+         * @author hyr
+         * @modified 2026-03-09-15:24
+         * @description 记录 reward 网络的预测值
+        """
         episode_return_pred = None
-        if self.reward_predict_enabled:
+        if self.reward_predict_enabled and self.reward_mixer is not None:
             with th.no_grad():
+                prev_training = self.reward_mixer.training
+                self.reward_mixer.eval()
                 _, global_reward_pred = self.reward_mixer(self.batch)
                 # Keep shapes aligned as [batch, T, 1] to avoid unintended broadcasting.
                 reward_mask = self.batch["filled"][:, :-1].float()
                 return_pred_batch = (global_reward_pred * reward_mask).sum(dim=1)
                 episode_return_pred = return_pred_batch.squeeze(-1).item()
+                if prev_training:
+                    self.reward_mixer.train()
 
         # 更新总时间步 self.t_env
         if not test_mode:
@@ -267,55 +275,3 @@ class EpisodeRunner:
                     prefix + k + "_mean", v / stats["n_episodes"], self.t_env
                 )
         stats.clear()
-
-    def load_reward_models(self, path):
-        """
-        * @author hyr
-        * @modified 2026-03-06-15:10
-        * @description 用于加载训练好的奖励网络参数
-        """
-        if self.reward_mixer is None:
-            return False
-        if not path:
-            self.logger.console_logger.info(
-                "Reward checkpoint path is empty; skip return_pred logging in runner"
-            )
-            return False
-        if not os.path.isdir(path):
-            self.logger.console_logger.info(
-                "Reward checkpoint directory {} doesn't exist".format(path)
-            )
-            return False
-
-        model_path = path
-        if not os.path.exists(os.path.join(model_path, "reward_mixer.th")):
-            timesteps = []
-            for name in os.listdir(path):
-                full_name = os.path.join(path, name)
-                if os.path.isdir(full_name) and name.isdigit():
-                    timesteps.append(int(name))
-
-            if len(timesteps) == 0:
-                self.logger.console_logger.info(
-                    "No reward checkpoint found in {}".format(path)
-                )
-                return False
-
-            if self.args.load_step == 0:
-                timestep_to_load = max(timesteps)
-            else:
-                timestep_to_load = min(
-                    timesteps, key=lambda x: abs(x - self.args.load_step)
-                )
-            model_path = os.path.join(path, str(timestep_to_load))
-
-        self.logger.console_logger.info(
-            "Loading reward mixer for runner from {}".format(model_path)
-        )
-        self.reward_mixer.load_state_dict(
-            th.load(
-                "{}/reward_mixer.th".format(model_path),
-                map_location=lambda storage, loc: storage,
-            )
-        )
-        return True
