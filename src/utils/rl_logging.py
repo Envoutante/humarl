@@ -98,7 +98,9 @@ class Logger:
             i += 1
             window = 5 if k != "epsilon" else 1
             # item = "{:.4f}".format(np.mean([x[1] for x in self.stats[k][-window:]]))
-            values = torch.tensor([x[1] for x in self.stats[k][-window:]])
+            values = torch.tensor(
+                [x[1] for x in self.stats[k][-window:]], dtype=torch.float32
+            )
             item = "{:.4f}".format(values.mean().item())
 
             log_str += "{:<25}{:>8}".format(k + ":", item)

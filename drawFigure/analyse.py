@@ -101,7 +101,7 @@ def load_npy_data(file_path, max_steps=2e6):
         return None, None
 
 
-def plot_map_algorithms(map_name, scalar_name, smooth_weight):
+def plot_map_algorithms(map_name, scalar_name, smooth_weight, max_steps=2e6):
     # --- Robust Path Parsing ---
     path_parts = os.path.normpath(map_name).split(os.sep)
     if len(path_parts) >= 2:
@@ -162,7 +162,7 @@ def plot_map_algorithms(map_name, scalar_name, smooth_weight):
                 full_file_path = os.path.join(root, file_name)
 
                 if file_name.endswith(".npy"):
-                    steps, values = load_npy_data(full_file_path)
+                    steps, values = load_npy_data(full_file_path, max_steps=max_steps)
                     if steps is not None and values is not None and len(steps) > 0:
                         all_steps.append(steps)
                         all_values.append(values)
@@ -186,8 +186,13 @@ def plot_map_algorithms(map_name, scalar_name, smooth_weight):
                             continue
 
                         scalar_data = ea.Scalars(target_scalar)
-                        steps = [s.step for s in scalar_data if s.step <= 2e6 + 5000]
-                        values = [s.value for s in scalar_data if s.step <= 2e6 + 5000]
+                        step_limit = max_steps + 5000 if max_steps else None
+                        if step_limit is None:
+                            steps = [s.step for s in scalar_data]
+                            values = [s.value for s in scalar_data]
+                        else:
+                            steps = [s.step for s in scalar_data if s.step <= step_limit]
+                            values = [s.value for s in scalar_data if s.step <= step_limit]
                         if steps:
                             all_steps.append(steps)
                             all_values.append(values)
@@ -296,7 +301,7 @@ if __name__ == "__main__":
 
     # # SMAC
     # plot_map_algorithms('6h_vs_8z/GATMIX-Test4', 'test_battle_won_mean', 0.8)
-    plot_map_algorithms("MMM2/QMIX", "test_battle_won_mean", 0.8)
+    plot_map_algorithms("MMM2/QMIX", "test_battle_won_mean", 0.8, max_steps=2.6e6)
     # plot_map_algorithms('2s3z_vs_2s4z/GATMIX', 'test_battle_won_mean', 0.8)
     # plot_map_algorithms('5m_vs_6m/GATMIX', 'test_battle_won_mean', 0.8)
     # plot_map_algorithms('MMM2/GATMIX', 'test_battle_won_mean', 0.8)

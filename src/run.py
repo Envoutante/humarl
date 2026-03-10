@@ -266,11 +266,18 @@ def run_sequential(args, logger):
                     )
 
                 elif runner.t_env < stage2_end_t:
-                    # Stage-2: 训练 reward 网络
+                    # Stage-2: 原有 reward 训练 + Stage-1 的 Q_tot 训练
                     learner.train_reward_network(episode_sample, runner.t_env, episode)
+                    learner.train_q_network(
+                        episode_sample,
+                        runner.t_env,
+                        episode,
+                        reward_mode="tot",
+                    )
 
                 elif runner.t_env < stage3_end_t:
-                    # Stage-3: 用 reward 网络预测的 r_i 训练 Q_i
+                    # Stage-3: 原有 Q_i 训练 + Stage-2 的 reward 训练（不包含 Stage-1 的 Q_tot）
+                    learner.train_reward_network(episode_sample, runner.t_env, episode)
                     learner.train_q_network(
                         episode_sample,
                         runner.t_env,

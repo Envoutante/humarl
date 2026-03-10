@@ -25,6 +25,8 @@ class EpisodeRunner:
         self.test_returns = []
         self.train_pred_returns = []
         self.test_pred_returns = []
+        self.train_pred_return_abs_errors = []
+        self.test_pred_return_abs_errors = []
         self.train_stats = {}
         self.test_stats = {}
 
@@ -38,6 +40,16 @@ class EpisodeRunner:
         """
         self.reward_mixer = None
         self.reward_predict_enabled = False
+        self.pred_return_warmup_steps = int(
+            getattr(self.args, "pred_return_warmup_steps", 0)
+        )
+        if getattr(self.args, "reward_checkpoint_path", ""):
+            self.pred_return_start_t = 0
+        else:
+            self.pred_return_start_t = int(
+                getattr(self.args, "q_tot_stage_steps", 0)
+                + self.pred_return_warmup_steps
+            )
 
         """
          * @author hyr
@@ -94,6 +106,11 @@ class EpisodeRunner:
         """Bind runner to learner reward mixer so logging uses the same weights."""
         self.reward_mixer = reward_mixer
         self.reward_predict_enabled = reward_mixer is not None
+
+    def _pred_return_stats_enabled(self):
+        if not self.reward_predict_enabled:
+            return False
+        return self.t_env >= self.pred_return_start_t
 
     def get_env_info(self):
         return self.env.get_env_info()
@@ -189,6 +206,11 @@ class EpisodeRunner:
         cur_pred_returns = (
             self.test_pred_returns if test_mode else self.train_pred_returns
         )
+        cur_pred_return_abs_errors = (
+            self.test_pred_return_abs_errors
+            if test_mode
+            else self.train_pred_return_abs_errors
+        )
         log_prefix = "test_" if test_mode else ""
         cur_stats.update(
             {
@@ -199,8 +221,11 @@ class EpisodeRunner:
         cur_stats["n_episodes"] = 1 + cur_stats.get("n_episodes", 0)
         cur_stats["ep_length"] = self.t + cur_stats.get("ep_length", 0)
         cur_returns.append(episode_return)
-        if episode_return_pred is not None:
+        if episode_return_pred is not None and self._pred_return_stats_enabled():
             cur_pred_returns.append(episode_return_pred)
+            cur_pred_return_abs_errors.append(
+                abs(float(episode_return_pred) - float(episode_return))
+            )
 
         """
          * @author hyr
@@ -230,9 +255,21 @@ class EpisodeRunner:
 
         # 记录日志
         if test_mode and (len(self.test_returns) == self.args.test_nepisode):
-            self._log(cur_returns, cur_pred_returns, cur_stats, log_prefix)
+            self._log(
+                cur_returns,
+                cur_pred_returns,
+                cur_pred_return_abs_errors,
+                cur_stats,
+                log_prefix,
+            )
         elif self.t_env - self.log_train_stats_t >= self.args.runner_log_interval:
-            self._log(cur_returns, cur_pred_returns, cur_stats, log_prefix)
+            self._log(
+                cur_returns,
+                cur_pred_returns,
+                cur_pred_return_abs_errors,
+                cur_stats,
+                log_prefix,
+            )
             if hasattr(self.mac.action_selector, "epsilon"):
                 self.logger.log_stat(
                     "epsilon", self.mac.action_selector.epsilon, self.t_env
@@ -241,7 +278,7 @@ class EpisodeRunner:
 
         return self.batch
 
-    def _log(self, returns, pred_returns, stats, prefix):
+    def _log(self, returns, pred_returns, pred_abs_errors, stats, prefix):
         """
         * @author hyr
         * @modified 2026-03-06-10:32
@@ -252,6 +289,7 @@ class EpisodeRunner:
         if len(pred_returns) > 0:
             pred_return_mean = np.mean(pred_returns)
             pred_return_std = np.std(pred_returns)
+            pred_return_mae = np.mean(pred_abs_errors) if len(pred_abs_errors) > 0 else 0.0
             self.logger.log_stat_group(
                 prefix + "return_mean",
                 {"true": true_return_mean, "pred": pred_return_mean},
@@ -262,12 +300,18 @@ class EpisodeRunner:
                 {"true": true_return_std, "pred": pred_return_std},
                 self.t_env,
             )
+            self.logger.log_stat(prefix + "pred_return_mae", pred_return_mae, self.t_env)
+            self.logger.log_stat(
+                prefix + "pred_return_valid_count", len(pred_returns), self.t_env
+            )
         else:
             self.logger.log_stat(prefix + "return_mean", true_return_mean, self.t_env)
             self.logger.log_stat(prefix + "return_std", true_return_std, self.t_env)
+            self.logger.log_stat(prefix + "pred_return_valid_count", 0, self.t_env)
 
         returns.clear()
         pred_returns.clear()
+        pred_abs_errors.clear()
 
         for k, v in stats.items():
             if k != "n_episodes":
