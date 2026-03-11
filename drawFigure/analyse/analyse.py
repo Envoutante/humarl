@@ -301,7 +301,7 @@ if __name__ == "__main__":
 
     # # SMAC
     # plot_map_algorithms('6h_vs_8z/GATMIX-Test4', 'test_battle_won_mean', 0.8)
-    plot_map_algorithms("MMM2/QMIX", "test_battle_won_mean", 0.8, max_steps=2.6e6)
+    plot_map_algorithms("3s5z/QMIX", "test_battle_won_mean", 0.8, max_steps=2.6e6)
     # plot_map_algorithms('2s3z_vs_2s4z/GATMIX', 'test_battle_won_mean', 0.8)
     # plot_map_algorithms('5m_vs_6m/GATMIX', 'test_battle_won_mean', 0.8)
     # plot_map_algorithms('MMM2/GATMIX', 'test_battle_won_mean', 0.8)

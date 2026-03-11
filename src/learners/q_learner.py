@@ -68,6 +68,7 @@ class QLearner:
          * @description 记录 individual_rewards
         """
         self.individual_rewards_log_path = None
+        self.individual_reward_log_start_t = 0
         if self.args.reward_mixer and self.args.log_individual_reward:
             logs_dir = os.path.join(
                 os.path.abspath(self.args.local_results_path), "individual_reward_logs"
@@ -77,6 +78,15 @@ class QLearner:
             self.individual_rewards_log_path = os.path.join(
                 logs_dir, f"{unique_token}.csv"
             )
+            # Align CSV logging with return prediction curve start:
+            # reward stage start (q_tot_stage_steps) + optional warmup.
+            if getattr(self.args, "reward_checkpoint_path", ""):
+                self.individual_reward_log_start_t = 0
+            else:
+                self.individual_reward_log_start_t = int(
+                    getattr(self.args, "q_tot_stage_steps", 0)
+                    + int(getattr(self.args, "pred_return_warmup_steps", 0))
+                )
             if not os.path.exists(self.individual_rewards_log_path):
                 with open(self.individual_rewards_log_path, "w", encoding="utf-8") as f:
                     header_cells = [
@@ -222,6 +232,8 @@ class QLearner:
 
         testing_reward_loss = None
         stage_name = "q_tot"
+        individual_rewards_for_log = None
+        global_reward_pred_for_log = None
 
         if reward_mode == "tot":
             # Stage-1: 使用采样得到的 r_tot 训练 Q_tot。
@@ -233,6 +245,16 @@ class QLearner:
                     target_max_qvals, batch["state"][:, 1:]
                 )
             targets = rewards + self.args.gamma * (1 - terminated) * target_max_qvals
+
+            # Logging should align with reward-curve timing, not only Stage-3.
+            if self.args.reward_mixer and self._individual_reward_logging_enabled(t_env):
+                with th.no_grad():
+                    individual_rewards_raw, global_reward_pred_for_log = self.reward_mixer(
+                        batch
+                    )
+                individual_rewards_for_log = (
+                    individual_rewards_raw.squeeze(-1) * mask
+                ).detach()
 
         elif reward_mode == "individual":
             # Stage-3: 使用 reward 网络预测的 r_i 训练 Q_i。
@@ -251,21 +273,29 @@ class QLearner:
 
             masked_individual_rewards = individual_rewards.squeeze(-1) * mask
             individual_rewards = masked_individual_rewards.detach()
+            individual_rewards_for_log = individual_rewards
+            global_reward_pred_for_log = global_reward_pred
             targets = (
                 individual_rewards
                 + self.args.gamma * (1 - terminated) * target_max_qvals
             )
+        else:
+            raise ValueError("Unknown reward_mode: {}".format(reward_mode))
 
+        if (
+            self.args.reward_mixer
+            and self._individual_reward_logging_enabled(t_env)
+            and individual_rewards_for_log is not None
+            and global_reward_pred_for_log is not None
+        ):
             self._log_reward(
                 rewards,
-                individual_rewards,
-                global_reward_pred,
+                individual_rewards_for_log,
+                global_reward_pred_for_log,
                 mask,
                 t_env,
                 episode_num,
             )
-        else:
-            raise ValueError("Unknown reward_mode: {}".format(reward_mode))
 
         # 计算 TD-error
         td_error = chosen_action_qvals - targets.detach()
@@ -414,6 +444,11 @@ class QLearner:
                     f.write(row + "\n")
 
             self.reward_save_t = t_env
+
+    def _individual_reward_logging_enabled(self, t_env: int) -> bool:
+        if self.individual_rewards_log_path is None:
+            return False
+        return t_env >= self.individual_reward_log_start_t
 
     def _update_targets(self):
         self.target_mac.load_state(self.mac)

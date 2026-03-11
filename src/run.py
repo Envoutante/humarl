@@ -173,10 +173,11 @@ def run_sequential(args, logger):
 
     q_tot_stage_steps = getattr(args, "q_tot_stage_steps", args.t_max)
     reward_stage_steps = getattr(args, "reward_stage_steps", 0)
-    q_i_stage_steps = getattr(args, "q_i_stage_steps", 0)
     stage1_end_t = q_tot_stage_steps
     stage2_end_t = q_tot_stage_steps + reward_stage_steps
-    stage3_end_t = q_tot_stage_steps + reward_stage_steps + q_i_stage_steps
+    # Stage-3 always consumes the remaining training budget up to t_max.
+    q_i_stage_steps = max(args.t_max - stage2_end_t, 0)
+    stage3_end_t = args.t_max
     if args.reward_mixer:
         logger.console_logger.info(
             "Three-stage budgets (env timesteps): Q_tot={}, Reward={}, Q_i={}, total={}".format(
@@ -276,8 +277,14 @@ def run_sequential(args, logger):
                     )
 
                 elif runner.t_env < stage3_end_t:
-                    # Stage-3: 原有 Q_i 训练 + Stage-2 的 reward 训练（不包含 Stage-1 的 Q_tot）
+                    # Stage-3: 在原有 Q_i 训练基础上，加入 Stage-1 的 Q_tot 与 Stage-2 的 reward 训练
                     learner.train_reward_network(episode_sample, runner.t_env, episode)
+                    learner.train_q_network(
+                        episode_sample,
+                        runner.t_env,
+                        episode,
+                        reward_mode="tot",
+                    )
                     learner.train_q_network(
                         episode_sample,
                         runner.t_env,

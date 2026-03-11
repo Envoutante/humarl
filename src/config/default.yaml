@@ -28,9 +28,9 @@ reward_t_max: 1000000 # 训练 reward 网络多少步
 reward_batch_size: 32 # reward 网络训练的 batch size
 reward_save_interval: 500000 # 记录预测的个体 reward 的间隔
 reward_checkpoint_path: "" # 预训练 reward 网络路径
-q_tot_stage_steps: 1000000 # Stage-1 预算: 用 r_tot 训练 Q_tot 的环境时间步数
-reward_stage_steps: 600000 # Stage-2 预算: 训练 reward 网络的环境时间步数
-q_i_stage_steps: 1000000 # Stage-3 预算: 用预测 r_i 训练 Q_i 的环境时间步数
+q_tot_stage_steps: 500000 # Stage-1 预算: 用 r_tot 训练 Q_tot 的环境时间步数
+reward_stage_steps: 300000 # Stage-2 预算: 训练 reward 网络的环境时间步数
+q_i_stage_steps: 0 # Stage-3 预算由 t_max 剩余步数自动决定（兼容保留字段）
 pred_return_warmup_steps: 100000 # pred return 统计在 q_tot_stage_steps 之后再额外延迟的步数
 
 # --- Transition options ---
