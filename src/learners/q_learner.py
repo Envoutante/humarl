@@ -231,6 +231,7 @@ class QLearner:
             ]  # [batch_size, seq_len-1, n_agents]
 
         testing_reward_loss = None
+        consistency_reg_loss = None
         stage_name = "q_tot"
         individual_rewards_for_log = None
         global_reward_pred_for_log = None
@@ -247,10 +248,12 @@ class QLearner:
             targets = rewards + self.args.gamma * (1 - terminated) * target_max_qvals
 
             # Logging should align with reward-curve timing, not only Stage-3.
-            if self.args.reward_mixer and self._individual_reward_logging_enabled(t_env):
+            if self.args.reward_mixer and self._individual_reward_logging_enabled(
+                t_env
+            ):
                 with th.no_grad():
-                    individual_rewards_raw, global_reward_pred_for_log = self.reward_mixer(
-                        batch
+                    individual_rewards_raw, global_reward_pred_for_log = (
+                        self.reward_mixer(batch)
                     )
                 individual_rewards_for_log = (
                     individual_rewards_raw.squeeze(-1) * mask
@@ -279,6 +282,20 @@ class QLearner:
                 individual_rewards
                 + self.args.gamma * (1 - terminated) * target_max_qvals
             )
+
+            # Stage-3 regularizer: enforce consistency between Q_tot target and
+            # the mixed output of per-agent Q_i targets.
+            if self.mixer is not None:
+                q_tot_target = rewards + self.args.gamma * (
+                    1 - terminated
+                ) * self.target_mixer(target_max_qvals, batch["state"][:, 1:])
+                mixed_individual_target = self.mixer(targets, batch["state"][:, :-1])
+                consistency_error = mixed_individual_target - q_tot_target.detach()
+                reg_mask = mask.expand_as(consistency_error)
+                masked_consistency_error = consistency_error * reg_mask
+                consistency_reg_loss = (
+                    masked_consistency_error**2
+                ).sum() / reg_mask.sum()
         else:
             raise ValueError("Unknown reward_mode: {}".format(reward_mode))
 
@@ -308,9 +325,14 @@ class QLearner:
         # 计算 L2 损失 (仅对实际数据取平均)
         q_loss = (masked_td_error**2).sum() / q_mask.sum()
 
+        total_loss = q_loss
+        if consistency_reg_loss is not None:
+            reg_weight = getattr(self.args, "reg_weight", 0.0)
+            total_loss = total_loss + reg_weight * consistency_reg_loss
+
         # 更新参数
         self.optimiser.zero_grad()
-        q_loss.backward()
+        total_loss.backward()
         grad_norm = th.nn.utils.clip_grad_norm_(self.params, self.args.grad_norm_clip)
         self.optimiser.step()
 
@@ -325,6 +347,17 @@ class QLearner:
         if t_env - self.log_stats_t >= self.args.learner_log_interval:
             self.logger.log_stat("q_loss", q_loss.item(), t_env)
             self.logger.log_stat("{}/loss".format(stage_name), q_loss.item(), t_env)
+            if consistency_reg_loss is not None:
+                self.logger.log_stat(
+                    "{}/consistency_mse".format(stage_name),
+                    consistency_reg_loss.item(),
+                    t_env,
+                )
+                self.logger.log_stat(
+                    "{}/total_loss".format(stage_name),
+                    total_loss.item(),
+                    t_env,
+                )
             if testing_reward_loss is not None:
                 self.logger.log_stat(
                     "reward_loss/test", testing_reward_loss.item(), t_env

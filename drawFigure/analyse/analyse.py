@@ -101,7 +101,23 @@ def load_npy_data(file_path, max_steps=2e6):
         return None, None
 
 
-def plot_map_algorithms(map_name, scalar_name, smooth_weight, max_steps=2e6):
+def _format_step_label(step_value):
+    if step_value >= 1e6:
+        label = f"{step_value / 1e6:.1f}M"
+    elif step_value >= 1e3:
+        label = f"{step_value / 1e3:.0f}K"
+    else:
+        label = f"{int(step_value)}"
+    return label
+
+
+def plot_map_algorithms(
+    map_name,
+    scalar_name,
+    smooth_weight,
+    max_steps=2e6,
+    phase_boundaries=None,
+):
     # --- Robust Path Parsing ---
     path_parts = os.path.normpath(map_name).split(os.sep)
     if len(path_parts) >= 2:
@@ -149,6 +165,7 @@ def plot_map_algorithms(map_name, scalar_name, smooth_weight, max_steps=2e6):
     variant_names.sort()
 
     plotted_any = False
+    global_max_step = 0
 
     for idx, variant_name in enumerate(variant_names):
         variant_path = os.path.join(base_path, variant_name)
@@ -191,8 +208,12 @@ def plot_map_algorithms(map_name, scalar_name, smooth_weight, max_steps=2e6):
                             steps = [s.step for s in scalar_data]
                             values = [s.value for s in scalar_data]
                         else:
-                            steps = [s.step for s in scalar_data if s.step <= step_limit]
-                            values = [s.value for s in scalar_data if s.step <= step_limit]
+                            steps = [
+                                s.step for s in scalar_data if s.step <= step_limit
+                            ]
+                            values = [
+                                s.value for s in scalar_data if s.step <= step_limit
+                            ]
                         if steps:
                             all_steps.append(steps)
                             all_values.append(values)
@@ -265,6 +286,8 @@ def plot_map_algorithms(map_name, scalar_name, smooth_weight, max_steps=2e6):
             alpha=0.6,
             color=colors[idx % len(colors)][1],
         )
+        if min_steps > 0:
+            global_max_step = max(global_max_step, all_steps[0][min_steps - 1])
         plotted_any = True
 
     if not plotted_any:
@@ -274,7 +297,31 @@ def plot_map_algorithms(map_name, scalar_name, smooth_weight, max_steps=2e6):
     plt.xlabel("训练时间步", fontsize=20)
     plt.ylabel("测试胜率", fontsize=20)
     plt.title(f"{algo_name}在{name_for_print}的测试胜率", fontsize=20)
-    plt.legend(fontsize=11, loc="upper left")
+
+    # 根据阶段边界画虚线，并将边界加入 x 轴刻度
+    if phase_boundaries is not None:
+        ax = plt.gca()
+        x_axis_max = max_steps if max_steps else global_max_step
+        filtered_boundaries = sorted(b for b in phase_boundaries if 0 < b < x_axis_max)
+
+        for boundary in filtered_boundaries:
+            plt.axvline(
+                x=boundary,
+                linestyle="--",
+                color="#444444",
+                linewidth=1.4,
+                alpha=0.9,
+            )
+
+        # 保留原有自动刻度（对应原网格），仅额外插入阶段边界相关刻度
+        original_ticks = [t for t in ax.get_xticks() if 0 <= t <= x_axis_max]
+        tick_values = original_ticks + [0] + filtered_boundaries + [x_axis_max]
+        tick_values = sorted(set(float(v) for v in tick_values))
+        tick_labels = [_format_step_label(v) for v in tick_values]
+        ax.set_xticks(tick_values)
+        ax.set_xticklabels(tick_labels)
+
+    plt.legend(fontsize=11, loc="lower right")
     plt.grid(True)
 
     # --- Save Plot to Correct Directory ---
@@ -301,7 +348,13 @@ if __name__ == "__main__":
 
     # # SMAC
     # plot_map_algorithms('6h_vs_8z/GATMIX-Test4', 'test_battle_won_mean', 0.8)
-    plot_map_algorithms("3s5z/QMIX", "test_battle_won_mean", 0.8, max_steps=2.6e6)
+    plot_map_algorithms(
+        "3s5z/res_reg_multi",
+        "test_battle_won_mean",
+        0.8,
+        max_steps=2.6e6,
+        phase_boundaries=[0.5e6, 0.8e6],
+    )
     # plot_map_algorithms('2s3z_vs_2s4z/GATMIX', 'test_battle_won_mean', 0.8)
     # plot_map_algorithms('5m_vs_6m/GATMIX', 'test_battle_won_mean', 0.8)
     # plot_map_algorithms('MMM2/GATMIX', 'test_battle_won_mean', 0.8)
