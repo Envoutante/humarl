@@ -2,6 +2,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 from tensorboard.backend.event_processing import event_accumulator
+from matplotlib.ticker import FuncFormatter
 
 
 plt.rcParams["font.family"] = ["DejaVu Sans Mono", "SimHei"]  # 设置中文字体
@@ -303,6 +304,17 @@ def plot_map_algorithms(
         ax = plt.gca()
         x_axis_max = max_steps if max_steps else global_max_step
         filtered_boundaries = sorted(b for b in phase_boundaries if 0 < b < x_axis_max)
+        ax.set_xlim(left=0, right=x_axis_max)
+
+        # 若边界与主网格重合，则移除该主网格线，保留阶段虚线
+        major_ticks = [t for t in ax.get_xticks() if 0 <= t <= x_axis_max]
+        tol = 1e-6
+        filtered_major_ticks = [
+            t
+            for t in major_ticks
+            if not any(abs(t - b) <= tol for b in filtered_boundaries)
+        ]
+        ax.set_xticks(filtered_major_ticks)
 
         for boundary in filtered_boundaries:
             plt.axvline(
@@ -313,13 +325,12 @@ def plot_map_algorithms(
                 alpha=0.9,
             )
 
-        # 保留原有自动刻度（对应原网格），仅额外插入阶段边界相关刻度
-        original_ticks = [t for t in ax.get_xticks() if 0 <= t <= x_axis_max]
-        tick_values = original_ticks + [0] + filtered_boundaries + [x_axis_max]
-        tick_values = sorted(set(float(v) for v in tick_values))
-        tick_labels = [_format_step_label(v) for v in tick_values]
-        ax.set_xticks(tick_values)
-        ax.set_xticklabels(tick_labels)
+        # 保留原有主刻度和网格，仅在次刻度上标注阶段边界
+        ax.set_xticks(filtered_boundaries, minor=True)
+        ax.xaxis.set_minor_formatter(
+            FuncFormatter(lambda x, pos: _format_step_label(x))
+        )
+        ax.tick_params(axis="x", which="minor", labelbottom=True, length=4)
 
     plt.legend(fontsize=11, loc="lower right")
     plt.grid(True)
