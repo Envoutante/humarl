@@ -358,9 +358,40 @@ if __name__ == "__main__":
     # plot_map_algorithms('gen_protoss/ADD_O_Test', 'test_battle_won_mean', 0.8)
 
     # # SMAC
-    # plot_map_algorithms('6h_vs_8z/GATMIX-Test4', 'test_battle_won_mean', 0.8)
+    # plot_map_algorithms(
+    #     "3s5z/res_reg_multi",
+    #     "test_battle_won_mean",
+    #     0.8,
+    #     max_steps=2.6e6,
+    #     phase_boundaries=[0.5e6, 0.8e6],
+    # )
+
+    # plot_map_algorithms(
+    #     "3s5z/res_reg_single",
+    #     "test_battle_won_mean",
+    #     0.8,
+    #     max_steps=2.6e6,
+    #     phase_boundaries=[0.5e6, 0.8e6],
+    # )
+
     plot_map_algorithms(
-        "3s5z/res_reg_multi",
+        "3s5z/res_with_1.0reg",
+        "test_battle_won_mean",
+        0.8,
+        max_steps=2.6e6,
+        phase_boundaries=[0.5e6, 0.8e6],
+    )
+
+    plot_map_algorithms(
+        "3s5z/res_with_0.5reg",
+        "test_battle_won_mean",
+        0.8,
+        max_steps=2.6e6,
+        phase_boundaries=[0.5e6, 0.8e6],
+    )
+
+    plot_map_algorithms(
+        "3s5z/res_with_0.1reg",
         "test_battle_won_mean",
         0.8,
         max_steps=2.6e6,

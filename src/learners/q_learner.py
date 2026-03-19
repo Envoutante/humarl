@@ -289,7 +289,7 @@ class QLearner:
                 q_tot_target = rewards + self.args.gamma * (
                     1 - terminated
                 ) * self.mixer(target_max_qvals.detach(), batch["state"][:, 1:])
-                mixed_q_i_target = self.mixer(targets.detach(), batch["state"][:, :1])
+                mixed_q_i_target = self.mixer(targets.detach(), batch["state"][:, 1:])
                 consistency_error = mixed_q_i_target - q_tot_target
                 reg_mask = mask.expand_as(consistency_error)
                 masked_consistency_error = consistency_error * reg_mask
