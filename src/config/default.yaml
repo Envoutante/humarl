@@ -23,6 +23,7 @@ save_reward_model: False # 是否保存 reward 网络模型
 reward_mixer: False # 是否使用个体 reward
 reward_prediction_mode: "residual" # reward 网络形式: "residual"(预测残差) 或 "direct"(直接预测 r_i)
 reward_weight: 0.0 # 全局 reward 的权重
+q_i_weight: 1.0 # 联合训练时 Q_i 分支权重（weight1）
 reg_weight: 0.5
 reward_t_max: 1000000 # 训练 reward 网络多少步
 reward_batch_size: 32 # reward 网络训练的 batch size

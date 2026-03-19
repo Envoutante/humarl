@@ -180,7 +180,6 @@ class QLearner:
         batch: EpisodeBatch,
         t_env: int,
         episode_num: int,
-        reward_mode: str = "tot",
     ):
         # 从 batch 中取出相关数据
         rewards = batch["reward"][:, :-1]
@@ -205,10 +204,11 @@ class QLearner:
 
         # 计算目标 Q 值
         target_mac_out = []
-        self.target_mac.init_hidden(batch.batch_size)
+        self.target_mac.init_hidden(batch.batch_size)  # 目标网络初始化隐藏状态
         for t in range(batch.max_seq_length):
             target_agent_outs = self.target_mac.forward(batch, t=t)
             target_mac_out.append(target_agent_outs)
+
         # 由于目标 Q 值是 Q_{t+1} 因此不需要第一个 Q 值
         target_mac_out = th.stack(
             target_mac_out[1:], dim=1
@@ -232,103 +232,105 @@ class QLearner:
 
         testing_reward_loss = None
         consistency_reg_loss = None
-        stage_name = "q_tot"
-        individual_rewards_for_log = None
-        global_reward_pred_for_log = None
+        q_tot_loss = None
+        q_i_loss = None
 
-        if reward_mode == "tot":
-            # Stage-1: 使用采样得到的 r_tot 训练 Q_tot。
-            if self.mixer is not None:
-                chosen_action_qvals = self.mixer(
-                    chosen_action_qvals, batch["state"][:, :-1]
-                )
-                target_max_qvals = self.target_mixer(
-                    target_max_qvals, batch["state"][:, 1:]
-                )
-            targets = rewards + self.args.gamma * (1 - terminated) * target_max_qvals
-
-            # Logging should align with reward-curve timing, not only Stage-3.
-            if self.args.reward_mixer and self._individual_reward_logging_enabled(
-                t_env
-            ):
-                with th.no_grad():
-                    individual_rewards_raw, global_reward_pred_for_log = (
-                        self.reward_mixer(batch)
-                    )
-                individual_rewards_for_log = (
-                    individual_rewards_raw.squeeze(-1) * mask
-                ).detach()
-
-        elif reward_mode == "individual":
-            # Stage-3: 使用 reward 网络预测的 r_i 训练 Q_i。
-            if not self.args.reward_mixer:
-                return
-
-            stage_name = "q_i"
-            with th.no_grad():
-                individual_rewards, global_reward_pred = self.reward_mixer(batch)
-
-            true_global_rewards = batch["reward"][:, :-1]
-            reward_error = global_reward_pred - true_global_rewards
-            reward_mask = mask.expand_as(reward_error)
-            masked_reward_error = reward_error * reward_mask
-            testing_reward_loss = (masked_reward_error**2).sum() / reward_mask.sum()
-
-            masked_individual_rewards = individual_rewards.squeeze(-1) * mask
-            individual_rewards = masked_individual_rewards.detach()
-            individual_rewards_for_log = individual_rewards
-            global_reward_pred_for_log = global_reward_pred
-            targets = (
-                individual_rewards
-                + self.args.gamma * (1 - terminated) * target_max_qvals
+        """
+         * @author hyr
+         * @modified 2026-03-19-19:57
+         * @description 更新 Q_tot
+        """
+        chosen_action_qvals_tot = chosen_action_qvals
+        target_max_qvals_tot = target_max_qvals
+        if self.mixer is not None:
+            chosen_action_qvals_tot = self.mixer(
+                chosen_action_qvals_tot, batch["state"][:, :-1]
             )
+            target_max_qvals_tot = self.target_mixer(
+                target_max_qvals_tot, batch["state"][:, 1:]
+            )
+        targets_tot = (
+            rewards + self.args.gamma * (1 - terminated) * target_max_qvals_tot
+        )
+        td_error_tot = chosen_action_qvals_tot - targets_tot.detach()
+        q_tot_mask = mask.expand_as(td_error_tot)
+        masked_td_error_tot = td_error_tot * q_tot_mask
+        q_tot_loss = (masked_td_error_tot**2).sum() / q_tot_mask.sum()
+        total_loss = q_tot_loss
 
-            # Stage-3 regularizer: enforce consistency between Q_tot target and
-            # the mixed output of per-agent Q_i targets.
-            if self.mixer is not None:
-                q_tot_target = rewards + self.args.gamma * (
-                    1 - terminated
-                ) * self.mixer(target_max_qvals.detach(), batch["state"][:, 1:])
-                mixed_q_i_target = self.mixer(targets.detach(), batch["state"][:, 1:])
-                consistency_error = mixed_q_i_target - q_tot_target
-                reg_mask = mask.expand_as(consistency_error)
-                masked_consistency_error = consistency_error * reg_mask
-                consistency_reg_loss = (
-                    masked_consistency_error**2
-                ).sum() / reg_mask.sum()
-        else:
-            raise ValueError("Unknown reward_mode: {}".format(reward_mode))
+        """
+        * @author hyr
+        * @modified 2026-03-19-19:57
+        * @description 更新 Q_i
+        """
+        q_i_start_t = int(
+            getattr(self.args, "q_tot_stage_steps", 0)
+            + getattr(self.args, "reward_stage_steps", 0)
+        )
+        include_q_i_loss = self.args.reward_mixer and (t_env >= q_i_start_t)
 
-        if (
-            self.args.reward_mixer
-            and self._individual_reward_logging_enabled(t_env)
-            and individual_rewards_for_log is not None
-            and global_reward_pred_for_log is not None
+        if self.args.reward_mixer and (
+            self._individual_reward_logging_enabled(t_env) or include_q_i_loss
         ):
-            self._log_reward(
-                rewards,
-                individual_rewards_for_log,
-                global_reward_pred_for_log,
-                mask,
-                t_env,
-                episode_num,
-            )
+            with th.no_grad():
+                individual_rewards_raw, global_reward_pred = self.reward_mixer(batch)
 
-        # 计算 TD-error
-        td_error = chosen_action_qvals - targets.detach()
+            individual_rewards = (individual_rewards_raw.squeeze(-1) * mask).detach()
 
-        q_mask = mask.expand_as(td_error)
+            if include_q_i_loss:
+                true_global_rewards = batch["reward"][:, :-1]
+                reward_error = global_reward_pred - true_global_rewards
+                reward_mask = mask.expand_as(reward_error)
+                masked_reward_error = reward_error * reward_mask
+                testing_reward_loss = (masked_reward_error**2).sum() / reward_mask.sum()
 
-        # mask 掉无效的 TD-error
-        masked_td_error = td_error * q_mask
+                targets_i = (
+                    individual_rewards
+                    + self.args.gamma * (1 - terminated) * target_max_qvals
+                )
+                td_error_i = chosen_action_qvals - targets_i.detach()
+                q_i_mask = mask.expand_as(td_error_i)
+                masked_td_error_i = td_error_i * q_i_mask
+                q_i_loss = (masked_td_error_i**2).sum() / q_i_mask.sum()
 
-        # 计算 L2 损失 (仅对实际数据取平均)
-        q_loss = (masked_td_error**2).sum() / q_mask.sum()
+                """
+                * @author hyr
+                * @modified 2026-03-19-19:57
+                * @description 更新正则项
+                """
+                if self.mixer is not None:
+                    q_tot_target = rewards + self.args.gamma * (
+                        1 - terminated
+                    ) * self.mixer(target_max_qvals.detach(), batch["state"][:, 1:])
+                    mixed_q_i_target = self.mixer(
+                        targets_i.detach(), batch["state"][:, 1:]
+                    )
+                    consistency_error = mixed_q_i_target - q_tot_target
+                    reg_mask = mask.expand_as(consistency_error)
+                    masked_consistency_error = consistency_error * reg_mask
+                    consistency_reg_loss = (
+                        masked_consistency_error**2
+                    ).sum() / reg_mask.sum()
 
-        total_loss = q_loss
-        if consistency_reg_loss is not None:
-            reg_weight = getattr(self.args, "reg_weight", 0.0)
-            total_loss = total_loss + reg_weight * consistency_reg_loss
+                # total_loss = Q_tot + weight1 * (Q_i + weight2 * reg)
+                q_i_weight = getattr(self.args, "q_i_weight", 1.0)
+                reg_weight = getattr(self.args, "reg_weight", 0.0)
+                if consistency_reg_loss is not None:
+                    total_loss = q_tot_loss + q_i_weight * (
+                        q_i_loss + reg_weight * consistency_reg_loss
+                    )
+                else:
+                    total_loss = q_tot_loss + q_i_weight * q_i_loss
+
+            if self._individual_reward_logging_enabled(t_env):
+                self._log_reward(
+                    rewards,
+                    individual_rewards,
+                    global_reward_pred,
+                    mask,
+                    t_env,
+                    episode_num,
+                )
 
         # 更新参数
         self.optimiser.zero_grad()
@@ -345,53 +347,39 @@ class QLearner:
 
         # 记录日志
         if t_env - self.log_stats_t >= self.args.learner_log_interval:
-            self.logger.log_stat("q_loss", q_loss.item(), t_env)
-            self.logger.log_stat("{}/loss".format(stage_name), q_loss.item(), t_env)
+            if include_q_i_loss:
+                self.logger.log_stat("q_tot_loss", q_tot_loss.item(), t_env)
+                self.logger.log_stat("q_i_loss", q_i_loss.item(), t_env)
+            else:
+                self.logger.log_stat("q_tot_loss", q_tot_loss.item(), t_env)
+
             if consistency_reg_loss is not None:
                 self.logger.log_stat(
-                    "{}/consistency_mse".format(stage_name),
-                    consistency_reg_loss.item(),
-                    t_env,
+                    "consistency_mse", consistency_reg_loss.item(), t_env
                 )
-                self.logger.log_stat(
-                    "{}/total_loss".format(stage_name),
-                    total_loss.item(),
-                    t_env,
-                )
+
             if testing_reward_loss is not None:
                 self.logger.log_stat(
                     "reward_loss/test", testing_reward_loss.item(), t_env
                 )
+
             self.logger.log_stat("grad_norm", grad_norm, t_env)
-            mask_elems = q_mask.sum().item()
+            mask_elems = q_tot_mask.sum().item()
             self.logger.log_stat(
-                "td_error_abs", (masked_td_error.abs().sum().item() / mask_elems), t_env
-            )
-            self.logger.log_stat(
-                "{}/td_error_abs".format(stage_name),
-                (masked_td_error.abs().sum().item() / mask_elems),
+                "td_error_abs",
+                ((td_error_tot.abs() * q_tot_mask).sum().item() / mask_elems),
                 t_env,
             )
             self.logger.log_stat(
                 "q_taken_mean",
-                (chosen_action_qvals * q_mask).sum().item()
-                / (mask_elems * self.args.n_agents),
-                t_env,
-            )
-            self.logger.log_stat(
-                "{}/q_taken_mean".format(stage_name),
-                (chosen_action_qvals * q_mask).sum().item()
+                (chosen_action_qvals_tot * q_tot_mask).sum().item()
                 / (mask_elems * self.args.n_agents),
                 t_env,
             )
             self.logger.log_stat(
                 "target_mean",
-                (targets * q_mask).sum().item() / (mask_elems * self.args.n_agents),
-                t_env,
-            )
-            self.logger.log_stat(
-                "{}/target_mean".format(stage_name),
-                (targets * q_mask).sum().item() / (mask_elems * self.args.n_agents),
+                (targets_tot * q_tot_mask).sum().item()
+                / (mask_elems * self.args.n_agents),
                 t_env,
             )
             self.log_stats_t = t_env
