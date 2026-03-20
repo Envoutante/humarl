@@ -113,11 +113,11 @@ class QLearner:
             )
             self.transition_storage = TransitionStorage(self.args, file_path)
 
-    """
-    训练 reward 网络
-    """
-
     def train_reward_network(self, batch: EpisodeBatch, t_env: int, episode_num: int):
+        """
+        训练 reward 网络
+        """
+
         if not self.args.reward_mixer:
             return None, None
 
@@ -171,16 +171,17 @@ class QLearner:
 
         return t_env
 
-    """
-    训练 Q 网络
-    """
-
     def train_q_network(
         self,
         batch: EpisodeBatch,
         t_env: int,
         episode_num: int,
+        train_q_i: bool = False,
     ):
+        """
+        训练 Q 网络
+        """
+
         # 从 batch 中取出相关数据
         rewards = batch["reward"][:, :-1]
         actions = batch["actions"][:, :-1]
@@ -189,9 +190,12 @@ class QLearner:
         mask[:, 1:] = mask[:, 1:] * (1 - terminated[:, :-1])
         avail_actions = batch["avail_actions"]
 
-        # 遍历所有时间步以计算每个动作的 Q 值并放入 mac_out
+        """
+        主网络计算 Q(s, a)
+        """
         mac_out = []
         self.mac.init_hidden(batch.batch_size)
+        # 遍历所有时间步以计算每个动作的 Q 值并放入 mac_out
         for t in range(batch.max_seq_length):
             agent_outs = self.mac.forward(batch, t=t)
             mac_out.append(agent_outs)
@@ -202,7 +206,9 @@ class QLearner:
             3
         )
 
-        # 计算目标 Q 值
+        """
+        目标网络计算 Q(s', a')
+        """
         target_mac_out = []
         self.target_mac.init_hidden(batch.batch_size)  # 目标网络初始化隐藏状态
         for t in range(batch.max_seq_length):
@@ -230,6 +236,11 @@ class QLearner:
                 0
             ]  # [batch_size, seq_len-1, n_agents]
 
+        """
+         * @author hyr
+         * @modified 2026-03-20-09:54
+         * @description 定义各种 loss
+        """
         testing_reward_loss = None
         consistency_reg_loss = None
         q_tot_loss = None
@@ -263,21 +274,15 @@ class QLearner:
         * @modified 2026-03-19-19:57
         * @description 更新 Q_i
         """
-        q_i_start_t = int(
-            getattr(self.args, "q_tot_stage_steps", 0)
-            + getattr(self.args, "reward_stage_steps", 0)
-        )
-        include_q_i_loss = self.args.reward_mixer and (t_env >= q_i_start_t)
-
         if self.args.reward_mixer and (
-            self._individual_reward_logging_enabled(t_env) or include_q_i_loss
+            self._individual_reward_logging_enabled(t_env) or train_q_i
         ):
             with th.no_grad():
                 individual_rewards_raw, global_reward_pred = self.reward_mixer(batch)
 
             individual_rewards = (individual_rewards_raw.squeeze(-1) * mask).detach()
 
-            if include_q_i_loss:
+            if train_q_i:
                 true_global_rewards = batch["reward"][:, :-1]
                 reward_error = global_reward_pred - true_global_rewards
                 reward_mask = mask.expand_as(reward_error)
@@ -347,7 +352,7 @@ class QLearner:
 
         # 记录日志
         if t_env - self.log_stats_t >= self.args.learner_log_interval:
-            if include_q_i_loss:
+            if train_q_i:
                 self.logger.log_stat("q_tot_loss", q_tot_loss.item(), t_env)
                 self.logger.log_stat("q_i_loss", q_i_loss.item(), t_env)
             else:

@@ -263,6 +263,7 @@ def run_sequential(args, logger):
                         episode_sample,
                         runner.t_env,
                         episode,
+                        train_q_i=False,
                     )
 
                 elif runner.t_env < stage2_end_t:
@@ -272,6 +273,7 @@ def run_sequential(args, logger):
                         episode_sample,
                         runner.t_env,
                         episode,
+                        train_q_i=False,
                     )
 
                 elif runner.t_env < stage3_end_t:
@@ -281,12 +283,14 @@ def run_sequential(args, logger):
                         episode_sample,
                         runner.t_env,
                         episode,
+                        train_q_i=True,
                     )
             else:
                 learner.train_q_network(
                     episode_sample,
                     runner.t_env,
                     episode,
+                    train_q_i=False,
                 )
 
         # 测试模型
