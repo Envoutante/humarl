@@ -1,3 +1,7 @@
 tb_logs/
 results/
 *.out
+
+# Python cache
+__pycache__/
+*.py[cod]
