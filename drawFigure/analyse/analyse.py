@@ -374,29 +374,29 @@ if __name__ == "__main__":
     #     phase_boundaries=[0.5e6, 0.8e6],
     # )
 
+    # plot_map_algorithms(
+    #     "3s5z/res_with_1.0reg",
+    #     "test_battle_won_mean",
+    #     0.8,
+    #     max_steps=2.6e6,
+    #     phase_boundaries=[0.5e6, 0.8e6],
+    # )
+
     plot_map_algorithms(
-        "3s5z/res_with_1.0reg",
+        "MMM2/res_multi_with_0.5reg",
         "test_battle_won_mean",
         0.8,
         max_steps=2.6e6,
         phase_boundaries=[0.5e6, 0.8e6],
     )
 
-    plot_map_algorithms(
-        "3s5z/res_with_0.5reg",
-        "test_battle_won_mean",
-        0.8,
-        max_steps=2.6e6,
-        phase_boundaries=[0.5e6, 0.8e6],
-    )
-
-    plot_map_algorithms(
-        "3s5z/res_with_0.1reg",
-        "test_battle_won_mean",
-        0.8,
-        max_steps=2.6e6,
-        phase_boundaries=[0.5e6, 0.8e6],
-    )
+    # plot_map_algorithms(
+    #     "3s5z/res_with_0.1reg",
+    #     "test_battle_won_mean",
+    #     0.8,
+    #     max_steps=2.6e6,
+    #     phase_boundaries=[0.5e6, 0.8e6],
+    # )
     # plot_map_algorithms('2s3z_vs_2s4z/GATMIX', 'test_battle_won_mean', 0.8)
     # plot_map_algorithms('5m_vs_6m/GATMIX', 'test_battle_won_mean', 0.8)
     # plot_map_algorithms('MMM2/GATMIX', 'test_battle_won_mean', 0.8)

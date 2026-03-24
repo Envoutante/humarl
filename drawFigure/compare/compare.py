@@ -248,25 +248,25 @@ if __name__ == "__main__":
     # 示例：compare/地图名/算法名/变体名/.../events.out.tfevents*
     # 例如：compare/3s5z/QMIX/residual/<run>/events.out.tfevents*
     merge_return_true_pred_plot(
-        map_name="3s5z",
-        algo_name="QMIX",
-        variant_name="residual",
+        map_name="MMM2",
+        algo_name="res_multi_with_0.5reg",
+        variant_name="1",
         smooth_weight=0.8,
         max_steps=2.6e6,
     )
 
     merge_return_true_pred_plot(
-        map_name="3s5z",
-        algo_name="QMIX",
-        variant_name="direct",
+        map_name="MMM2",
+        algo_name="res_multi_with_0.5reg",
+        variant_name="2",
         smooth_weight=0.8,
         max_steps=2.6e6,
     )
 
     merge_return_true_pred_plot(
-        map_name="3s5z",
-        algo_name="QMIX",
-        variant_name="resSingle",
+        map_name="MMM2",
+        algo_name="res_multi_with_0.5reg",
+        variant_name="3(best)",
         smooth_weight=0.8,
         max_steps=2.6e6,
     )

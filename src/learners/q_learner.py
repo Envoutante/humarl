@@ -400,76 +400,69 @@ class QLearner:
     ):
         """
         * @author hyr
-        * @modified 2025-11-25-17:40
-        * @description 记录 rewards, global_reward_pred 和 individual_rewards
+        * @modified 2026-03-24-17:11
+        * @description 记录 individual reward 或其残差
         """
         if self.individual_rewards_log_path is None:
             return
 
-        # 修复：这里应该是 reward_save_t 而不是 rewards_log_stats_t
         if (
-            t_env - self.reward_save_t >= self.args.reward_save_interval
-            or self.reward_save_t == 0
+            t_env - self.reward_save_t < self.args.reward_save_interval
+            and self.reward_save_t != 0
         ):
-            batch_size, seq_len, _ = individual_rewards.shape
-            for episode in range(batch_size):
-                step_cells = []
-                # 计算当前 episode 在所有有效时间步上的 reward 之和
-                mask_ep = mask[episode, :seq_len]
-                if th.is_tensor(mask_ep):
-                    mask_ep_np = mask_ep.cpu().numpy()
-                else:
-                    mask_ep_np = np.array(mask_ep)
-                # squeeze 奖励到标量，按 mask 过滤
-                episode_reward_ep = rewards[episode, :seq_len]
-                if th.is_tensor(episode_reward_ep):
-                    episode_reward_ep = episode_reward_ep.cpu().numpy()
-                # 确保 rewards 是 1D 数组，如果形状是 (seq_len, 1) 则 squeeze
-                episode_reward_ep = episode_reward_ep.squeeze()
-                # 计算预测的总奖励
-                episode_pred_reward_ep = global_reward_pred[episode, :seq_len]
-                if th.is_tensor(episode_pred_reward_ep):
-                    episode_pred_reward_ep = episode_pred_reward_ep.cpu().numpy()
-                # 确保预测奖励是 1D 数组
-                episode_pred_reward_ep = episode_pred_reward_ep.squeeze()
-                # 确保 mask 也是 1D 数组
-                mask_ep_np = mask_ep_np.squeeze()
-                # 只对有效的时间步求和（mask > 0）
-                episode_total_reward = float(np.sum(episode_reward_ep * mask_ep_np))
-                episode_total_pred_reward = float(
-                    np.sum(episode_pred_reward_ep * mask_ep_np)
-                )
-                for t_idx in range(seq_len):
-                    # 若该时间步被 mask（填充），则不写入内容
-                    if mask_ep_np[t_idx] <= 0:
-                        step_cells.append("")
-                        continue
-                    total_reward = rewards[episode, t_idx].item()
-                    pred_reward = global_reward_pred[episode, t_idx].item()
-                    # 修改：使用分号 ; 代替逗号，避免破坏 CSV 列结构
-                    # 或者去掉 .tolist() 手动拼接，控制分隔符
-                    step_rewards_str = ";".join(
-                        map(str, individual_rewards[episode, t_idx].tolist())
-                    )
-                    # 格式：真实的总 reward - 预测的总 reward = [子 reward; 子 reward; ...]
-                    cell = f"{total_reward}&{pred_reward}=[{step_rewards_str}]"
-                    step_cells.append(cell)
+            return
 
-                # episode_num 已经包含当前 batch 的 episode，需要减去 batch_size 来计算正确的索引
-                episode_idx = (episode_num - batch_size + 1) + episode
-                # 在第一个时间步 reward 前增加两列：当前 episode 的真实总 reward 和预测总 reward
-                row = ", ".join(
-                    [
-                        str(episode_idx),
-                        str(episode_total_reward),
-                        str(episode_total_pred_reward),
-                    ]
-                    + step_cells
-                )
-                with open(self.individual_rewards_log_path, "a", encoding="utf-8") as f:
-                    f.write(row + "\n")
+        batch_size, seq_len, _ = individual_rewards.shape
+        is_residual_mode = (
+            getattr(self.args, "reward_prediction_mode", "residual") == "residual"
+        )
 
-            self.reward_save_t = t_env
+        for episode in range(batch_size):
+            mask_ep_np = np.asarray(
+                mask[episode, :seq_len].detach().cpu().numpy()
+            ).squeeze()
+            reward_ep_np = np.asarray(
+                rewards[episode, :seq_len].detach().cpu().numpy()
+            ).squeeze()
+            pred_reward_ep_np = np.asarray(
+                global_reward_pred[episode, :seq_len].detach().cpu().numpy()
+            ).squeeze()
+
+            episode_total_reward = float(np.sum(reward_ep_np * mask_ep_np))
+            episode_total_pred_reward = float(np.sum(pred_reward_ep_np * mask_ep_np))
+
+            step_cells = []
+            for t_idx in range(seq_len):
+                if mask_ep_np[t_idx] <= 0:
+                    step_cells.append("")
+                    continue
+
+                total_reward = float(reward_ep_np[t_idx])
+                pred_reward = float(pred_reward_ep_np[t_idx])
+                reward_values = (
+                    individual_rewards[episode, t_idx].detach().cpu().tolist()
+                )
+
+                if is_residual_mode:
+                    base_reward = total_reward / float(self.args.n_agents)
+                    reward_values = [v - base_reward for v in reward_values]
+
+                step_rewards_str = ";".join(map(str, reward_values))
+                step_cells.append(f"{total_reward}&{pred_reward}=[{step_rewards_str}]")
+
+            episode_idx = (episode_num - batch_size + 1) + episode
+            row = ", ".join(
+                [
+                    str(episode_idx),
+                    str(episode_total_reward),
+                    str(episode_total_pred_reward),
+                ]
+                + step_cells
+            )
+            with open(self.individual_rewards_log_path, "a", encoding="utf-8") as f:
+                f.write(row + "\n")
+
+        self.reward_save_t = t_env
 
     def _individual_reward_logging_enabled(self, t_env: int) -> bool:
         if self.individual_rewards_log_path is None:
