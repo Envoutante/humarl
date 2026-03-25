@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 from tensorboard.backend.event_processing import event_accumulator
@@ -297,7 +298,7 @@ def plot_map_algorithms(
 
     plt.xlabel("训练时间步", fontsize=20)
     plt.ylabel("测试胜率", fontsize=20)
-    plt.title(f"{algo_name}在{name_for_print}的测试胜率", fontsize=20)
+    plt.title(f"{algo_name}在{name_for_print}的测试胜率", fontsize=20, pad=14)
 
     # 根据阶段边界画虚线，并将边界加入 x 轴刻度
     if phase_boundaries is not None:
@@ -332,8 +333,34 @@ def plot_map_algorithms(
         )
         ax.tick_params(axis="x", which="minor", labelbottom=True, length=4)
 
-    plt.legend(fontsize=11, loc="lower right")
+    # plt.legend(fontsize=11, loc="lower right")
+    plt.legend(fontsize=11, loc="upper left")
     plt.grid(True)
+
+    # 在图右下角添加导出日期和星期，便于区分实验结果
+    now = datetime.now()
+    weekday_names = [
+        "星期一",
+        "星期二",
+        "星期三",
+        "星期四",
+        "星期五",
+        "星期六",
+        "星期日",
+    ]
+    date_text = f"{now.strftime('%Y-%m-%d')} {weekday_names[now.weekday()]}"
+    ax = plt.gca()
+    ax.text(
+        0.995,
+        0.01,
+        date_text,
+        transform=ax.transAxes,
+        ha="right",
+        va="bottom",
+        fontsize=8,
+        color="#444444",
+        bbox=dict(facecolor="white", alpha=0.45, edgecolor="none", pad=1.2),
+    )
 
     # --- Save Plot to Correct Directory ---
     # Get the directory where the script is located
@@ -383,11 +410,11 @@ if __name__ == "__main__":
     # )
 
     plot_map_algorithms(
-        "MMM2/res_multi_with_0.5reg",
+        "MMM2/res_multi_with_0.5reg_1.5M",
         "test_battle_won_mean",
         0.8,
         max_steps=2.6e6,
-        phase_boundaries=[0.5e6, 0.8e6],
+        phase_boundaries=[1.2e6, 1.5e6],
     )
 
     # plot_map_algorithms(
