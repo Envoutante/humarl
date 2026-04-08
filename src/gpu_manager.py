@@ -308,7 +308,7 @@ def get_gpu_status() -> Dict[int, dict]:
     return gpu_status
 
 
-def get_free_gpus(min_free_mb: int = 8000) -> List[int]:
+def get_free_gpus(min_free_mb: int = 2000) -> List[int]:
     """返回满足空闲条件的 GPU 列表。"""
     status = get_gpu_status()
     return [
@@ -594,7 +594,7 @@ class ExperimentManager:
 
     def check_gpu_availability(self):
         """获取当前可用 GPU 列表。"""
-        return get_free_gpus(min_free_mb=8000)
+        return get_free_gpus(min_free_mb=2000)
 
     def launch_if_possible(self):
         """当 GPU 空闲且队列非空时，尽可能启动更多实验。"""
