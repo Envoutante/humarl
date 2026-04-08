@@ -45,6 +45,9 @@ def run(_run, _config, _log):
         )
         tb_exp_direc = os.path.join(tb_logs_direc, "{}").format(unique_token)
         logger.setup_tb(tb_exp_direc)
+        _log.info("TensorBoard log dir: {}".format(tb_exp_direc))
+
+    _log.info("Run unique token: {}".format(unique_token))
 
     # 配置日志中的 Sacred
     logger.setup_sacred(_run)

@@ -2,14 +2,15 @@
 
 This protocol adapts the autonomous experiment loop to the PyMARL codebase.
 
-## GPU Manager Orchestrator (Optional)
+## GPU Manager Orchestrator
 
 For parallel experiment execution and automated monitoring, use the GPU manager:
 
 ```bash
-conda run -n hyr2pymarl python3 src/gpu_manager.py \
+./run_gpu_manager.sh gpu_manager.log \
    --exp_configs src/config/autoresearch.yaml \
-   --check_interval 1800
+   --baseline_dir results/baseline/MMM2 \
+   --check_interval 300
 ```
 
 **What it does**:
@@ -25,16 +26,16 @@ Based on the 3-stage training structure and time-matched QMIX baseline compariso
 
 | Stage | Condition | Action |
 |-------|-----------|--------|
-| Stage 1/2 | `win_rate[t_env] < baseline[t_env] * 0.5` | Terminate (异常差，可能有 bug) |
-| Stage 3 | `win_rate[t_env] < baseline[t_env] * 0.9` for >200K steps | Terminate (明显低于 baseline) |
+| Stage 1/2 | `win_rate[t_env] < baseline[t_env] * 0.5` | Terminate (abnormally poor, likely a bug) |
+| Stage 3 | `win_rate[t_env] < baseline[t_env] * 0.9` for >200K steps | Terminate (clearly below baseline) |
 
-**Baseline 来源**: `results/baseline/MMM2/` 下的 5 次 QMIX run，构建学习曲线 `{t_env: median_win_rate}`，阈值与同一时间步的 baseline 中位数对比。
+**Baseline source**: 5 QMIX runs under `results/baseline/MMM2/`, used to build the learning curve `{t_env: median_win_rate}`. Thresholds are compared against the baseline median at the same timestep.
 
-**阈值说明**: Stage 1/2 用 50% 因为此时算法等同于 QMIX，任何明显偏差都说明有问题。Stage 3 用 90% 因为你的算法在 MMM2 上通常表现较好。
+**Threshold rationale**: Stage 1/2 uses 50% because the method should behave like QMIX at this point, so major deviations indicate issues. Stage 3 uses 90% because your method typically performs well on MMM2.
 
 ## Setup
 
-**Conda environment**: PyMARL must run in the `hyr2pymarl` conda environment. All `python3` and `gpu_manager.py` commands must be wrapped with `conda run -n hyr2pymarl`.
+**Conda environment**: PyMARL must run in the `hyr2pymarl` conda environment. Activate env first, then run `python3` directly.
 
 To start a new run, work with the user to:
 
@@ -63,7 +64,7 @@ Each experiment runs on a single GPU.
 **Canonical baseline command**:
 
 ```bash
-conda run -n hyr2pymarl python3 src/main.py --config=qmix --env-config=sc2 with env_args.map_name=2s3z
+python3 -u src/main.py --config=qmix --env-config=sc2 with env_args.map_name=2s3z
 ```
 
 **Primary objective**: maximize `test_battle_won_mean` (higher is better).
@@ -77,7 +78,7 @@ Current work is a QMIX-based reward decomposition variant targeting better Bellm
 Default experiment template (adapt as needed, but treat as the starting point):
 
 ```bash
-nohup conda run -n hyr2pymarl python3 -u src/main.py \
+nohup python3 -u src/main.py \
    --tag=res_reg_multi \
    --config=qmix \
    --env-config=sc2 \
@@ -88,7 +89,6 @@ nohup conda run -n hyr2pymarl python3 -u src/main.py \
        reg_weight=0.5 \
        q_tot_stage_steps=1200000 \
        reward_stage_steps=300000 \
-       log_individual_reward=True \
    &> output.out &
 ```
 
@@ -141,28 +141,9 @@ Small gains that add brittle complexity should usually be discarded.
 ## Output and metric extraction
 
 PyMARL writes Sacred runs to `results/sacred/<run_id>/`.
-
-For the latest run, extract metrics from `info.json`:
-
-```bash
-latest=$(ls -1 results/sacred | grep -E '^[0-9]+$' | sort -n | tail -1)
-python3 - <<'PY'
-import json
-from pathlib import Path
-
-runs = sorted([p for p in Path('results/sacred').iterdir() if p.name.isdigit()], key=lambda p: int(p.name))
-info = json.loads((runs[-1] / 'info.json').read_text())
-
-def last_value(name):
-    v = info.get(name, [])
-    return float(v[-1]) if isinstance(v, list) and len(v) else None
-
-print(f"run_id={runs[-1].name}")
-print(f"test_battle_won_mean={last_value('test_battle_won_mean')}")
-PY
-```
-
-If a run crashes before producing valid Sacred metrics, inspect the log file in `results/logs/`.
+`gpu_manager.py` is the source of truth for metric tracking and status updates.
+Use `results.tsv` as the primary metrics table, and use `results/logs/` plus
+`results/sacred/<run_id>/` only for debugging and audit when needed.
 
 ## Logging results
 
@@ -178,8 +159,8 @@ Columns:
 
 1. short git commit hash (7 chars)
 2. best/final `test_battle_won_mean` for the run (use `0.000000` for crashes)
-3. `stage3_drop_ratio`: (stage3前胜率 - stage3后胜率) / stage3前胜率；如果是 crash/early_stop 则为 `na`
-4. `sample_efficiency`: 达到 baseline 终值 90% 所需的 t_env；若未达到则为 `-1`
+3. `stage3_drop_ratio`: (pre-stage3 win rate - post-stage3 win rate) / pre-stage3 win rate; use `na` for crash/early_stop
+4. `sample_efficiency`: the `t_env` required to reach 90% of the baseline final value; use `-1` if never reached
 5. status in `{stage1, stage2, stage3, done, killed, crashed}`
 6. experiment tag/identifier
 
@@ -198,47 +179,34 @@ Do not commit `results.tsv`.
 
 Run on a dedicated branch such as `autoresearch/mar26`.
 
-### Manual Loop (Single experiment at a time)
+Use this loop for autonomous algorithm iteration and execution.
 
 LOOP FOREVER:
 
-1. Check current git branch and commit.
-2. Propose one concrete PyMARL experiment idea.
-3. Edit only `src/learners/q_learner.py`, `src/modules/reward_mixer.py`, and `src/config/default.yaml`.
-4. Commit the change.
-5. Run experiment:
+1. Check the current branch and commit; keep work on `autoresearch/<tag>`.
+2. Read `results.tsv` and recent logs to identify the current best variant and the biggest failure mode (especially stage3 drop).
+3. Propose a small, concrete next hypothesis for algorithm improvement.
+4. Edit only allowed algorithm files (`src/learners/q_learner.py`, `src/modules/reward_mixer.py`, `src/config/default.yaml`).
+5. Commit the candidate change.
+6. Add one or more experiments for this hypothesis to `src/config/autoresearch.yaml`.
+7. Launch or keep running GPU manager:
 
 ```bash
-conda run -n hyr2pymarl python3 src/main.py --config=qmix --env-config=sc2 with env_args.map_name=MMM2
+./run_gpu_manager.sh gpu_manager.log \
+   --exp_configs src/config/autoresearch.yaml \
+   --baseline_dir results/baseline/MMM2 \
+   --check_interval 300
 ```
 
-6. Parse latest Sacred metrics (`test_battle_won_mean`).
-7. Run a stage3 drop check and record `stage3_drop_ratio`.
-8. If metrics are missing, treat as crash.
-9. Append one row to `results.tsv` with format: `commit test_battle_won_mean stage3_drop_ratio sample_efficiency status tag`.
-10. If primary metric improves and stage3 behavior is acceptable, keep commit and advance branch.
-11. If metric is tied/worse, or stage3 degradation is materially worse, reset to pre-experiment commit.
+8. Let GPU manager schedule experiments in parallel, monitor Sacred metrics, apply early termination rules, and append outcomes to `results.tsv`.
+9. After enough signal is collected, compare candidates by primary metric (`test_battle_won_mean`) and stage3 behavior (`stage3_drop_ratio`, `sample_efficiency`).
+10. Keep the best commit as new baseline for the next iteration; discard regressions by resetting to the pre-experiment commit.
+11. Repeat without pausing unless explicitly interrupted by the human.
 
-### Orchestrated Loop (Parallel experiments)
-
-When using `gpu_manager.py`:
-
-1. Define experiments in `src/config/autoresearch.yaml`.
-2. Launch the orchestrator:
-
-```bash
-conda run -n hyr2pymarl python3 src/gpu_manager.py --exp_configs src/config/autoresearch.yaml --check_interval 1800
-```
-
-3. Orchestrator automatically:
-   - Scans for free GPUs
-   - Launches experiments from queue
-   - Monitors metrics every 30 minutes
-   - Reports progress
-   - Performs early termination when needed
-   - Logs results to `results.tsv`
-
-4. Periodically review `results.tsv` and `results/logs/` for experiment outputs.
+Operational notes:
+- Treat crash or missing metrics as failure and log them explicitly.
+- Prefer smaller, interpretable changes over large coupled edits.
+- If two variants are close, keep the simpler one.
 
 ## Failure handling
 
