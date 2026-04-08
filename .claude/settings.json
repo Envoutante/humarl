@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(conda run:*)",
+      "Bash(nohup bash:*)",
+      "Bash(pkill -9 -f \"gpu_manager.py\")",
+      "Bash(pkill -9 -f \"conda.*hyr2pymarl.*gpu_manager\")",
+      "Bash(echo \"Exit code: $?\")",
+      "Bash(pkill -9 -f \"gpu_manager\" pkill -9 -f \"conda.*hyr2pymarl\" sleep 2 ps aux)",
+      "Bash(nohup /home/rl-hyr/.conda/envs/hyr2pymarl/bin/python -u /tmp/test.py)",
+      "Read(//tmp/**)",
+      "Bash(nohup /home/rl-hyr/.conda/envs/hyr2pymarl/bin/python -u src/gpu_manager.py --exp_configs src/config/autoresearch.yaml --check_interval 5)",
+      "Bash(nvidia-smi --query-gpu=index,memory.free,memory.used --format=csv,noheader,nounits)",
+      "Bash(/home/rl-hyr/.conda/envs/hyr2pymarl/bin/python -u -c ':*)",
+      "Bash(nohup /home/rl-hyr/.conda/envs/hyr2pymarl/bin/python -u src/gpu_manager.py --exp_configs src/config/autoresearch.yaml --check_interval 1800)",
+      "Bash(python test_gpu_manager.py)",
+      "Bash(python -c \"from sacred import Experiment; ex = Experiment\\('test'\\); ex.logger = None; import sys; sys.argv = ['test']; ex.add_config\\({'test': 1}\\); from sacred.observers import FileStorageObserver; ex.observers.append\\(FileStorageObserver.create\\('/tmp/test_sacred'\\)\\); ex.run_commandline\\(['--force']\\) 2>&1 | head -20\")",
+      "Read(//home/rl-hyr/.conda/envs/hyr2pymarl/lib/python3.8/site-packages/sacred/**)",
+      "Bash(grep -a \"Started run with ID\" /mount/disk1/rl-hyr/pymarl/results/logs/*.log)",
+      "Bash(ls /mount/disk1/rl-hyr/pymarl/*.log)",
+      "Bash(python cleanup_experiment.py --dry-run)"
+    ]
+  }
+}

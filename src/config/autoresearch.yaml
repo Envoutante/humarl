@@ -1,0 +1,34 @@
+# Autoresearch Experiment Queue Configuration
+#
+# This file defines the queue of experiments to run.
+# Each experiment will be launched by gpu_manager.py when a GPU is available.
+#
+# Usage:
+#   python3 src/gpu_manager.py --exp_configs src/config/autoresearch.yaml
+
+queue:
+  # Example experiments - modify these for your actual research
+
+  - tag: "res_reg_v1"
+    config: qmix
+    env_config: sc2
+    env_args:
+      map_name: MMM2
+    overrides:
+      t_max: 2100000
+      reward_mixer: True
+      reward_prediction_mode: residual
+      q_tot_stage_steps: 1000000
+      reward_stage_steps: 200000
+      reg_weight: 0.5
+
+  # Add more experiments here:
+  # - tag: "experiment_name"
+  #   config: qmix
+  #   env_config: sc2
+  #   env_args:
+  #     map_name: MMM2
+  #   overrides:
+  #     t_max: 2600000
+  #     reward_mixer: True
+  #     # ... your parameters
