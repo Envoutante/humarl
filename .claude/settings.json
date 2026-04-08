@@ -18,7 +18,10 @@
       "Read(//home/rl-hyr/.conda/envs/hyr2pymarl/lib/python3.8/site-packages/sacred/**)",
       "Bash(grep -a \"Started run with ID\" /mount/disk1/rl-hyr/pymarl/results/logs/*.log)",
       "Bash(ls /mount/disk1/rl-hyr/pymarl/*.log)",
-      "Bash(python cleanup_experiment.py --dry-run)"
+      "Bash(python cleanup_experiment.py --dry-run)",
+      "WebFetch(domain:cloud.tencent.com)",
+      "WebSearch",
+      "Bash(python3 -c ':*)"
     ]
   }
 }

@@ -13,6 +13,8 @@ import re
 import statistics
 import subprocess
 import time
+import smtplib
+from email.message import EmailMessage
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -20,6 +22,56 @@ from typing import Optional, Dict, List, Tuple
 
 import yaml
 from tensorboard.backend.event_processing import event_accumulator
+
+
+# Notification settings (configure these or use --notification-email)
+# QQ 邮箱 SMTP 配置说明:
+# 1. 登录 https://mail.qq.com -> 设置 -> 账户 -> POP3/IMAP/SMTP/Exchange/CardDAV/CalDAV服务
+# 2. 开启 "SMTP 服务" -> 生成授权码（不是 QQ 密码！）
+# 3. 将授权码填入 SMTP_PASSWORD，将你的 QQ 邮箱填入 SMTP_USERNAME
+NOTIFICATION_EMAIL = "1294352318@qq.com"  # 接收通知的邮箱地址
+SMTP_SERVER = "smtp.qq.com"
+SMTP_PORT = 465            # QQ 邮箱 SMTP 使用 SSL 加密
+SMTP_USERNAME = "1294352318@qq.com"       # 你的 QQ 邮箱地址
+SMTP_PASSWORD = "wzjuxwhokqdvffhi"       # 授权码（不是 QQ 登录密码！）
+ALERT_LOG_FILE = 'results/logs/alerts.log'
+
+
+def send_notification(subject: str, body: str, email_to: str = None):
+    """Send notification via email and write to alert log file.
+
+    Args:
+        subject: Notification subject line
+        body: Notification body text
+        email_to: Email address to send to (overrides global NOTIFICATION_EMAIL)
+    """
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    alert_line = f"[{timestamp}] {subject}: {body}"
+
+    # Always write to alert log file
+    os.makedirs('results', exist_ok=True)
+    with open(ALERT_LOG_FILE, 'a') as f:
+        f.write(alert_line + '\n')
+
+    print(f"[ALERT] {alert_line}", flush=True)
+
+    # Send email if configured
+    recipient = email_to or NOTIFICATION_EMAIL
+    if recipient and SMTP_USERNAME and SMTP_PASSWORD:
+        try:
+            msg = EmailMessage()
+            msg['From'] = SMTP_USERNAME
+            msg['To'] = recipient
+            msg['Subject'] = f"[PyMARL GPU Manager] {subject}"
+            msg.set_content(body)
+
+            # QQ 邮箱使用 SSL 加密 (port 465)
+            with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as server:
+                server.login(SMTP_USERNAME, SMTP_PASSWORD)
+                server.send_message(msg)
+            print(f"[NOTIFICATION] Email sent to {recipient}", flush=True)
+        except Exception as e:
+            print(f"[NOTIFICATION] Failed to send email: {e}", flush=True)
 
 
 @dataclass
@@ -119,7 +171,7 @@ def load_baseline_curve(baseline_dir: str) -> dict:
 
     baseline_path = Path(baseline_dir)
     if not baseline_path.exists():
-        print(f"WARNING: Baseline directory not found: {baseline_dir}")
+        print(f"WARNING: Baseline directory not found: {baseline_dir}", flush=True)
         return {}
 
     for run_dir in baseline_path.iterdir():
@@ -133,14 +185,14 @@ def load_baseline_curve(baseline_dir: str) -> dict:
             for e in win_events:
                 all_runs[int(e.step)].append(e.value)
         except Exception as e:
-            print(f"WARNING: Failed to read {run_dir}: {e}")
+            print(f"WARNING: Failed to read {run_dir}: {e}", flush=True)
 
     # 每个 t_env 取中位数
     curve = {}
     for t_env, wins in sorted(all_runs.items()):
         curve[t_env] = statistics.median(wins)
 
-    print(f"Loaded baseline curve with {len(curve)} time points")
+    print(f"Loaded baseline curve with {len(curve)} time points", flush=True)
     return curve
 
 
@@ -158,7 +210,7 @@ def get_gpu_status() -> Dict[int, dict]:
             encoding='utf-8'
         )
     except (subprocess.CalledProcessError, FileNotFoundError):
-        print("ERROR: nvidia-smi not found or failed. Assuming no GPUs available.")
+        print("ERROR: nvidia-smi not found or failed. Assuming no GPUs available.", flush=True)
         return {}
 
     gpu_status = {}
@@ -315,11 +367,12 @@ class ExperimentManager:
         self.queue: List[dict] = []  # Queue of experiment configs
         self.running: Dict[int, Experiment] = {}  # gpu_id -> Experiment
         self.completed: List[Experiment] = []
+        self.notification_email = getattr(args, 'notification_email', None)
 
         # Load baseline curve for early termination comparison
         self.baseline_curve = load_baseline_curve(args.baseline_dir)
         self.baseline_final_90 = get_baseline_final_90(self.baseline_curve)
-        print(f"Baseline final 90% threshold: {self.baseline_final_90:.3f}")
+        print(f"Baseline final 90% threshold: {self.baseline_final_90:.3f}", flush=True)
 
         self.load_queue()
 
@@ -330,7 +383,7 @@ class ExperimentManager:
         for config_file in self.args.exp_configs:
             path = Path(config_file)
             if not path.exists():
-                print(f"WARNING: Config file not found: {config_file}")
+                print(f"WARNING: Config file not found: {config_file}", flush=True)
                 continue
 
             with open(path) as f:
@@ -339,7 +392,7 @@ class ExperimentManager:
             queue = data.get('queue', [])
             self.queue.extend(queue)
 
-        print(f"Loaded {len(self.queue)} experiments into queue")
+        print(f"Loaded {len(self.queue)} experiments into queue", flush=True)
 
     def launch_experiment(self, exp_config: dict, gpu_id: int) -> Experiment:
         """Launch a single experiment on specified GPU."""
@@ -360,7 +413,7 @@ class ExperimentManager:
         env = os.environ.copy()
         env['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
 
-        print(f"[LAUNCH] GPU {gpu_id} | {tag} | cmd: {cmd}")
+        print(f"[LAUNCH] GPU {gpu_id} | {tag} | cmd: {cmd}", flush=True)
 
         with open(log_file, 'w') as f:
             f.write(f"# GPU Manager launched experiment\n")
@@ -394,23 +447,23 @@ class ExperimentManager:
                 pass
 
         if sacred_run_id:
-            print(f"[INFO] Sacred run ID: {sacred_run_id}")
+            print(f"[INFO] Sacred run ID: {sacred_run_id}", flush=True)
             # Store the actual Sacred run_id for metrics lookup
             exp.exp_id = sacred_run_id
         else:
             # Fallback: scan results/sacred/ for the latest directory
-            print(f"[WARNING] Could not parse Sacred run ID, scanning for latest run...")
+            print(f"[WARNING] Could not parse Sacred run ID, scanning for latest run...", flush=True)
             sacred_dir = Path('results/sacred')
             if sacred_dir.exists():
                 run_dirs = [d for d in sacred_dir.iterdir() if d.is_dir()]
                 if run_dirs:
                     latest_run = max(run_dirs, key=lambda p: p.stat().st_mtime)
                     exp.exp_id = latest_run.name
-                    print(f"[INFO] Using latest Sacred run: {exp.exp_id}")
+                    print(f"[INFO] Using latest Sacred run: {exp.exp_id}", flush=True)
                 else:
-                    print(f"[WARNING] No Sacred runs found, using exp_id: {exp_id}")
+                    print(f"[WARNING] No Sacred runs found, using exp_id: {exp_id}", flush=True)
             else:
-                print(f"[WARNING] Sacred directory not found, using exp_id: {exp_id}")
+                print(f"[WARNING] Sacred directory not found, using exp_id: {exp_id}", flush=True)
 
         exp.process = process
         exp.stage = 'stage1'  # Initial stage
@@ -435,7 +488,7 @@ class ExperimentManager:
 
             exp = self.launch_experiment(exp_config, gpu_id)
             self.running[gpu_id] = exp
-            print(f"[STATUS] Running: {len(self.running)}, Queued: {len(self.queue)}")
+            print(f"[STATUS] Running: {len(self.running)}, Queued: {len(self.queue)}", flush=True)
 
     def check_running_experiments(self):
         """Check status of all running experiments, handle early termination."""
@@ -453,14 +506,19 @@ class ExperimentManager:
                 exp.stage = 'crashed'
                 self.completed.append(exp)
                 del self.running[gpu_id]
-                print(f"[ENDED] {exp.tag} crashed on GPU {gpu_id}")
+                send_notification(
+                    "Experiment Crashed",
+                    f"{exp.tag} (GPU {gpu_id}) crashed unexpectedly. "
+                    f"Check log: results/logs/{exp.exp_id}.log",
+                    email_to=self.notification_email
+                )
                 continue
 
             # Check if experiment completed normally
             if exp.stage == 'done':
                 self.completed.append(exp)
                 del self.running[gpu_id]
-                print(f"[DONE] {exp.tag} completed on GPU {gpu_id}")
+                print(f"[DONE] {exp.tag} completed on GPU {gpu_id}", flush=True)
                 continue
 
             # Track last_time_above_baseline_90 for sample_efficiency
@@ -472,11 +530,16 @@ class ExperimentManager:
             # Check for early termination
             should_stop, reason = should_terminate_early(exp, self.baseline_curve)
             if should_stop:
-                print(f"[EARLY_STOP] {exp.tag} on GPU {gpu_id}: {reason}")
+                print(f"[EARLY_STOP] {exp.tag} on GPU {gpu_id}: {reason}", flush=True)
                 self.kill_experiment(exp)
                 exp.kill_reason = reason
                 self.completed.append(exp)
                 del self.running[gpu_id]
+                send_notification(
+                    "Experiment Early Stopped",
+                    f"{exp.tag} (GPU {gpu_id}) was stopped early. Reason: {reason}",
+                    email_to=self.notification_email
+                )
 
     def kill_experiment(self, exp: Experiment):
         """Kill a running experiment."""
@@ -487,7 +550,7 @@ class ExperimentManager:
             except subprocess.TimeoutExpired:
                 exp.process.kill()
         exp.stage = 'killed'
-        print(f"[KILLED] {exp.tag} (PID {exp.process.pid if exp.process else 'N/A'})")
+        print(f"[KILLED] {exp.tag} (PID {exp.process.pid if exp.process else 'N/A'})", flush=True)
 
     def report_progress(self):
         """Print current status of all experiments."""
@@ -495,8 +558,8 @@ class ExperimentManager:
             return
 
         now = datetime.now()
-        print(f"\n{'='*80}")
-        print(f"[{now.strftime('%Y-%m-%d %H:%M')}] {len(self.running)} experiments running:")
+        print(f"\n{'='*80}", flush=True)
+        print(f"[{now.strftime('%Y-%m-%d %H:%M')}] {len(self.running)} experiments running:", flush=True)
         for gpu_id, exp in sorted(self.running.items()):
             elapsed_min = (time.time() - exp.start_time) / 60
             t_env = exp.get_t_env()
@@ -511,12 +574,12 @@ class ExperimentManager:
                 t_str = str(t_env)
 
             print(f"  GPU {gpu_id} | {exp.tag:20s} | {elapsed_min:5.1f}min | {exp.stage:7s} | "
-                  f"t_env={t_str:>8s} | won={won:.3f}")
+                  f"t_env={t_str:>8s} | won={won:.3f}", flush=True)
 
         # Also show queue status
         if self.queue:
-            print(f"  Queue: {len(self.queue)} experiments waiting")
-        print(f"{'='*80}\n")
+            print(f"  Queue: {len(self.queue)} experiments waiting", flush=True)
+        print(f"{'='*80}\n", flush=True)
 
     def cleanup_finished(self):
         """Clean up finished experiments and log results."""
@@ -561,28 +624,36 @@ class ExperimentManager:
                 f.write("commit\ttest_battle_won_mean\tstage3_drop_ratio\tsample_efficiency\tstatus\ttag\n")
             f.write(row)
 
-        print(f"[LOGGED] {exp.tag}: won={won:.6f}, drop={drop_str}, eff={eff_str}, status={exp.stage}")
+        print(f"[LOGGED] {exp.tag}: won={won:.6f}, drop={drop_str}, eff={eff_str}, status={exp.stage}", flush=True)
 
     def run(self):
         """Main loop."""
-        print("=" * 80)
-        print("GPU Manager starting...")
-        print(f"Queue size: {len(self.queue)}")
-        print(f"Check interval: {self.args.check_interval}s")
-        print("=" * 80)
+        print("=" * 80, flush=True)
+        print("GPU Manager starting...", flush=True)
+        print(f"Queue size: {len(self.queue)}", flush=True)
+        print(f"Check interval: {self.args.check_interval}s", flush=True)
+        print("=" * 80, flush=True)
 
-        # Initial launch
-        self.launch_if_possible()
-
-        while self.running or self.queue:
-            time.sleep(self.args.check_interval)
-
+        try:
+            # Initial launch
             self.launch_if_possible()
-            self.check_running_experiments()
-            self.report_progress()
-            self.cleanup_finished()
 
-        print("All experiments completed. GPU Manager exiting.")
+            while self.running or self.queue:
+                time.sleep(self.args.check_interval)
+
+                self.launch_if_possible()
+                self.check_running_experiments()
+                self.report_progress()
+                self.cleanup_finished()
+
+            print("All experiments completed. GPU Manager exiting.", flush=True)
+        except Exception as e:
+            send_notification(
+                "GPU Manager Crashed",
+                f"GPU Manager 异常退出。\n错误: {type(e).__name__}: {e}",
+                email_to=self.notification_email
+            )
+            raise  # 重新抛出以便调试
 
 
 def main():
@@ -606,11 +677,25 @@ def main():
         default=1800,
         help='GPU check interval in seconds (default: 1800 = 30 min)'
     )
+    parser.add_argument(
+        '--notification_email',
+        default=None,
+        help='Email address to send crash notifications (requires SMTP_USERNAME/SMTP_PASSWORD in code)'
+    )
 
     args = parser.parse_args()
 
-    manager = ExperimentManager(args)
-    manager.run()
+    try:
+        manager = ExperimentManager(args)
+        manager.run()
+    except Exception as e:
+        print(f"FATAL ERROR: {type(e).__name__}: {e}", flush=True)
+        send_notification(
+            "GPU Manager 启动失败",
+            f"GPU Manager 在初始化时崩溃。\n错误: {type(e).__name__}: {e}",
+            email_to=NOTIFICATION_EMAIL
+        )
+        raise
 
 
 if __name__ == '__main__':
